@@ -4504,6 +4504,8 @@ errout:
 	return ERR_PTR(err);
 }
 
+#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
+
 static struct btf *btf_parse_module(const char *module_name, const void *data, unsigned int data_size)
 {
 	struct btf_verifier_env *env = NULL;
@@ -4572,6 +4574,8 @@ errout:
 	}
 	return ERR_PTR(err);
 }
+
+#endif /* CONFIG_DEBUG_INFO_BTF_MODULES */
 
 struct btf *bpf_prog_get_target_btf(const struct bpf_prog *prog)
 {
