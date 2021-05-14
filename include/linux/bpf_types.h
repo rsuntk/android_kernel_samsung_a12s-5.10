@@ -77,6 +77,8 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LSM, lsm,
 	       void *, void *)
 #endif /* CONFIG_BPF_LSM */
 #endif
+BPF_PROG_TYPE(BPF_PROG_TYPE_SYSCALL, bpf_syscall,
+	      void *, void *)
 #ifdef CONFIG_FUSE_BPF
 BPF_PROG_TYPE(BPF_PROG_TYPE_FUSE, fuse, struct fuse_bpf_args, struct fuse_bpf_args)
 #endif
