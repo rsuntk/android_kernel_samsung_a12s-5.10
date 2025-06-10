@@ -24,6 +24,9 @@
 #include <linux/input/mt.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#if SEC_DEXPAD
+#include <linux/input/mt.h>
+#endif
 
 #if defined(CONFIG_FB)
 #ifdef CONFIG_DRM_MSM
@@ -2098,6 +2101,31 @@ static void ts_remaining_var_init(void)
 	input_info(true, &ts->client->dev, "%s : end\n", __func__);
 }
 
+static void nvt_set_input_prop_dexpad(struct nvt_ts_data *ts)
+{
+#if SEC_DEXPAD
+	ts->input_dev_dexpad->name = "sec_touchpad";
+	ts->input_dev_dexpad->phys = ts->phys;
+	ts->input_dev_dexpad->id.bustype = BUS_SPI;
+
+	ts->input_dev_dexpad->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS) | BIT_MASK(EV_SW);
+	ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+	ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOOL_FINGER)] = BIT_MASK(BTN_TOOL_FINGER);
+	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_BLACK_UI_GESTURE)] = BIT_MASK(KEY_BLACK_UI_GESTURE);
+	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_INT_CANCEL)] = BIT_MASK(KEY_INT_CANCEL);
+	ts->input_dev_dexpad->propbit[0] = BIT(INPUT_PROP_POINTER);
+	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_HOMEPAGE)] = BIT_MASK(KEY_HOMEPAGE);
+
+	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_X, 0, ts->platdata->abs_x_max, 0, 0);
+	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_Y, 0, ts->platdata->abs_y_max, 0, 0);
+	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
+	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
+
+	input_mt_init_slots(ts->input_dev_dexpad, ts->platdata->max_touch_num, INPUT_MT_POINTER);
+#endif
+}
+
 /*******************************************************
 Description:
 	Novatek touchscreen driver probe function.
@@ -2139,6 +2167,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		platdata = devm_kzalloc(&client->dev,sizeof(struct nvt_ts_platdata), GFP_KERNEL);
 		if (!platdata) {
 			input_err(true, &client->dev, "%s: Failed to allocate platform data\n", __func__);
+			ret = -ENOMEM;
 			goto err_alloc_platdata_failed;
 		}
 
@@ -2149,6 +2178,8 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 			goto err_parse_dt_failed;
 		}
 	} else {
+		input_err(true, &client->dev, "%s: no of_node\n", __func__);
+		ret = -ENODEV;
 		goto err_parse_dt_failed;
 	}
 
@@ -2255,6 +2286,16 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 #endif
 
+#if SEC_DEXPAD
+	//---allocate input sec touchpad device---
+	ts->input_dev_dexpad = input_allocate_device();
+	if (ts->input_dev_dexpad == NULL) {
+		input_err(true, &ts->client->dev, "%s: allocate input dexpad device failed\n", __func__);
+		ret = -ENOMEM;
+		goto err_input_register_device_failed;
+	}
+#endif
+
 	ts->platdata->max_touch_num = TOUCH_MAX_FINGER_NUM;
 
 #if TOUCH_KEY_NUM > 0
@@ -2304,19 +2345,21 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	ts->input_dev->name = NVT_TS_NAME;
 	ts->input_dev->phys = ts->phys;
 	ts->input_dev->id.bustype = BUS_SPI;
-	
+
+#if PROXIMITY_FUNCTION
 	//---set input proximity device info.---
 	ts->input_dev_proximity->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_SW);
 	ts->input_dev_proximity->propbit[0] = BIT(INPUT_PROP_DIRECT);
-	
 
 	input_set_abs_params(ts->input_dev_proximity, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
 
-#if PROXIMITY_FUNCTION
 	ts->input_dev_proximity->name = "sec_touchproximity";
 	ts->input_dev_proximity->phys = ts->phys;
 	ts->input_dev_proximity->id.bustype = BUS_SPI;
 #endif
+
+	//---set input dexpad device info.---
+	nvt_set_input_prop_dexpad(ts);
 
 	//---register input device---
 	ret = input_register_device(ts->input_dev);
@@ -2331,6 +2374,15 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	if (ret) {
 		input_err(true, &client->dev,"register input proximity device (%s) failed. ret=%d\n", ts->input_dev_proximity->name, ret);
 		goto err_input_register_proximity_device_failed;
+	}
+#endif
+
+#if SEC_DEXPAD
+	//---register input dexpad device---
+	ret = input_register_device(ts->input_dev_dexpad);
+	if (ret) {
+		input_err(true, &client->dev, "register input dexpad device (%s) failed. ret=%d\n", ts->input_dev_dexpad->name, ret);
+		goto err_input_register_dexpad_device_failed;
 	}
 #endif
 
@@ -2468,19 +2520,10 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 err_register_early_suspend_failed:
 #elif defined(CONFIG_FB)
-	if (!ts->platdata->enable_sysinput_enabled) {
-#ifdef _MSM_DRM_NOTIFY_H_
-		if (msm_drm_unregister_client(&ts->drm_notif))
-			input_err(true, &client->dev, "Error occurred while unregistering drm_notifier.\n");
-#else
-		if (fb_unregister_client(&ts->fb_notif))
-			input_err(true, &client->dev, "Error occurred while unregistering fb_notifier.\n");
-#endif
-	}
 err_register_notif_failed:
 #endif
-err_init_sec_fn:
 	nvt_ts_sec_fn_remove(ts);
+err_init_sec_fn:
 #if NVT_TOUCH_MP
 	nvt_mp_proc_deinit();
 err_mp_proc_init_failed:
@@ -2513,13 +2556,25 @@ err_create_nvt_fwu_wq_failed:
 		device_init_wakeup(&ts->input_dev->dev, 0);
 	free_irq(client->irq, ts);
 err_int_request_failed:
+#if SEC_DEXPAD
+	input_unregister_device(ts->input_dev_dexpad);
+	ts->input_dev_dexpad = NULL;
+err_input_register_dexpad_device_failed:
+#endif
 #if PROXIMITY_FUNCTION
 	input_unregister_device(ts->input_dev_proximity);
+	ts->input_dev_proximity = NULL;
 err_input_register_proximity_device_failed:
 #endif
 	input_unregister_device(ts->input_dev);
 	ts->input_dev = NULL;
 err_input_register_device_failed:
+#if SEC_DEXPAD
+	if (ts->input_dev_dexpad) {
+		input_free_device(ts->input_dev_dexpad);
+		ts->input_dev_dexpad = NULL;
+	}
+#endif
 #if PROXIMITY_FUNCTION
 	if (ts->input_dev_proximity) {
 		input_free_device(ts->input_dev_proximity);
@@ -2535,15 +2590,16 @@ err_input_dev_alloc_failed:
 err_chipvertrim_failed:
 	mutex_destroy(&ts->xbuf_lock);
 	mutex_destroy(&ts->lock);
-	nvt_gpio_deconfig(ts);
 err_spi_setup:
 err_ckeck_full_duplex:
+	nvt_gpio_deconfig(ts);
 	spi_set_drvdata(client, NULL);
 	regulator_put(ts->regulator_vdd);
 	regulator_put(ts->regulator_lcd_reset);
 	regulator_put(ts->regulator_lcd_bl_en);
 err_gpio_config_failed:
 err_parse_dt_failed:
+	client->dev.platform_data = NULL;
 	if (ts->platdata) {
 		devm_kfree(&client->dev, ts->platdata);
 		ts->platdata = NULL;
