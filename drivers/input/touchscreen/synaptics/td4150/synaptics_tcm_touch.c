@@ -146,6 +146,7 @@ struct touch_hcd {
 	struct mutex report_mutex;
 	struct input_dev *input_dev;
 	struct input_dev *input_dev_proximity;
+	struct input_dev *input_dev_dexpad;
 	struct touch_data touch_data;
 	struct input_params input_params;
 	struct syna_tcm_buffer out;
@@ -977,6 +978,36 @@ static int touch_get_input_params(void)
 	return 0;
 }
 
+static void touch_set_input_prop_dexpad(struct input_dev *dev)
+{
+	struct syna_tcm_hcd *tcm_hcd = touch_hcd->tcm_hcd;
+	static char mms_phys[64] = { 0 };
+
+	snprintf(mms_phys, sizeof(mms_phys), "%s1", TOUCH_INPUT_PHYS_PATH);
+	dev->phys = mms_phys;
+	dev->dev.parent = tcm_hcd->pdev->dev.parent;
+
+	set_bit(EV_SYN, dev->evbit);
+	set_bit(EV_KEY, dev->evbit);
+	set_bit(EV_ABS, dev->evbit);
+	set_bit(EV_SW, dev->evbit);
+	set_bit(BTN_TOUCH, dev->keybit);
+	set_bit(BTN_TOOL_FINGER, dev->keybit);
+	set_bit(KEY_BLACK_UI_GESTURE, dev->keybit);
+	set_bit(KEY_INT_CANCEL, dev->keybit);
+	set_bit(INPUT_PROP_POINTER, dev->propbit);
+	set_bit(KEY_HOMEPAGE, dev->keybit);
+
+	input_set_abs_params(dev, ABS_MT_POSITION_X, 0, touch_hcd->max_x, 0, 0);
+	input_set_abs_params(dev, ABS_MT_POSITION_Y, 0, touch_hcd->max_x, 0, 0);
+	input_set_abs_params(dev, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(dev, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
+	input_set_abs_params(dev, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
+
+	input_mt_init_slots(dev, touch_hcd->max_objects, INPUT_MT_POINTER);
+	input_set_drvdata(dev, tcm_hcd);
+}
+
 static void touch_set_input_prop_proximity(struct input_dev *dev)
 {
 	struct syna_tcm_hcd *tcm_hcd = touch_hcd->tcm_hcd;
@@ -1027,6 +1058,19 @@ static int touch_set_input_dev(void)
 		touch_set_input_prop_proximity(touch_hcd->input_dev_proximity);
 	}
 
+	touch_hcd->input_dev_dexpad = input_allocate_device();
+	if (touch_hcd->input_dev_dexpad == NULL) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: allocate input_dev_dexpad err!\n", __func__);
+		if (touch_hcd->input_dev) {
+			input_free_device(touch_hcd->input_dev);
+			touch_hcd->input_dev = NULL;
+			return -ENODEV;
+		}
+	}
+
+	touch_hcd->input_dev_dexpad->name = "sec_touchpad";
+	touch_set_input_prop_dexpad(touch_hcd->input_dev_dexpad);
+
 	touch_hcd->input_dev->name = TOUCH_INPUT_NAME;
 	touch_hcd->input_dev->phys = TOUCH_INPUT_PHYS_PATH;
 	touch_hcd->input_dev->id.product = SYNAPTICS_TCM_ID_PRODUCT;
@@ -1056,6 +1100,9 @@ static int touch_set_input_dev(void)
 			if (touch_hcd->input_dev_proximity)
 				input_free_device(touch_hcd->input_dev_proximity);
 		}
+		if (touch_hcd->input_dev_dexpad) {
+			input_free_device(touch_hcd->input_dev_dexpad);
+		}
 		touch_hcd->input_dev = NULL;
 		return retval;
 	}
@@ -1067,6 +1114,9 @@ static int touch_set_input_dev(void)
 		if (tcm_hcd->hw_if->bdata->support_ear_detect) {
 			if (touch_hcd->input_dev_proximity)
 				input_free_device(touch_hcd->input_dev_proximity);
+		}
+		if (touch_hcd->input_dev_dexpad) {
+			input_free_device(touch_hcd->input_dev_dexpad);
 		}
 		touch_hcd->input_dev = NULL;
 		return retval;
@@ -1087,6 +1137,20 @@ static int touch_set_input_dev(void)
 			touch_hcd->input_dev = NULL;
 			return retval;
 		}
+	}
+
+	retval = input_register_device(touch_hcd->input_dev_dexpad);
+	if (retval < 0) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: Unable to register %s input device\n",
+					__func__, touch_hcd->input_dev_dexpad->name);
+
+		input_free_device(touch_hcd->input_dev);
+		if (touch_hcd->input_dev_dexpad)
+			input_free_device(touch_hcd->input_dev_dexpad);
+			
+		input_unregister_device(touch_hcd->input_dev);
+		touch_hcd->input_dev = NULL;
+		return retval;
 	}
 
 	return 0;
