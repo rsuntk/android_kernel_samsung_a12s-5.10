@@ -35,6 +35,32 @@ void ili_tp_reset(void)
 	msleep(ilits->rst_edge_delay);
 }
 
+static void touch_set_input_prop_dexpad(struct input_dev *dev)
+{
+	dev->phys = ilits->phys;
+	dev->dev.parent = ilits->dev;
+	dev->id.bustype = ilits->hwif->bus_type;
+
+	set_bit(EV_SYN, dev->evbit);
+	set_bit(EV_KEY, dev->evbit);
+	set_bit(EV_ABS, dev->evbit);
+	set_bit(EV_SW, dev->evbit);
+	set_bit(BTN_TOUCH, dev->keybit);
+	set_bit(BTN_TOOL_FINGER, dev->keybit);
+	set_bit(KEY_BLACK_UI_GESTURE, dev->keybit);
+	set_bit(KEY_INT_CANCEL, dev->keybit);
+	set_bit(INPUT_PROP_POINTER, dev->propbit);
+	set_bit(KEY_HOMEPAGE, dev->keybit);
+
+	input_set_abs_params(dev, ABS_MT_POSITION_X, 0, ilits->max_x, 0, 0);
+	input_set_abs_params(dev, ABS_MT_POSITION_Y, 0, ilits->max_y, 0, 0);
+	input_set_abs_params(dev, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(dev, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
+	input_set_abs_params(dev, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
+
+	input_mt_init_slots(dev, MAX_TOUCH_NUM, INPUT_MT_POINTER);
+}
+
 static void touch_set_input_prop_proximity(struct input_dev *dev)
 {
 	dev->phys = ilits->phys;
@@ -74,6 +100,19 @@ void ili_input_register(void)
 		ilits->input_dev_proximity->name = "sec_touchproximity";
 		touch_set_input_prop_proximity(ilits->input_dev_proximity);
 	}
+
+	ilits->input_dev_dexpad = input_allocate_device();
+	if (ilits->input_dev_dexpad == NULL) {
+		input_err(true, ilits->dev, "%s: allocate input_dev_dexpad err!\n", __func__);
+		if (ilits->input) {
+			input_free_device(ilits->input);
+			ilits->input = NULL;
+			return;
+		}
+	}
+
+	ilits->input_dev_dexpad->name = "sec_touchpad";
+	touch_set_input_prop_dexpad(ilits->input_dev_dexpad);
 
 	ilits->input->name = "sec_touchscreen";
 	ilits->input->phys = ilits->phys;
@@ -137,6 +176,19 @@ void ili_input_register(void)
 			input_unregister_device(ilits->input);
 			ilits->input = NULL;
 		}
+	}
+
+	ret = input_register_device(ilits->input_dev_dexpad);
+	if (ret < 0) {
+		input_err(true, ilits->dev, "%s: Unable to register %s input device\n",
+					__func__, ilits->input_dev_dexpad->name);
+
+		input_free_device(ilits->input);
+		if (ilits->input_dev_dexpad)
+			input_free_device(ilits->input_dev_dexpad);
+
+		input_unregister_device(ilits->input);
+		ilits->input = NULL;
 	}
 }
 

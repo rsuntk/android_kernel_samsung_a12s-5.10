@@ -899,6 +899,7 @@ struct ilitek_ts_data {
 	struct spi_device *spi;
 	struct input_dev *input;
 	struct input_dev *input_dev_proximity;
+	struct input_dev *input_dev_dexpad;
 	struct device *dev;
 	struct wakeup_source *ws;
 
