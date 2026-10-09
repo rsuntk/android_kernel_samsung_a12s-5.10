@@ -1652,6 +1652,9 @@ ulong get_reg_addr(u32 id)
 static void __nocfi lib_task_work(struct kthread_work *work)
 {
 	struct is_task_work *cur_work;
+#ifdef ENABLE_FPSIMD_FOR_USER
+	struct is_fpsimd_task fpsimd;
+#endif
 
 	FIMC_BUG_VOID(!work);
 
@@ -1661,9 +1664,9 @@ static void __nocfi lib_task_work(struct kthread_work *work)
 		cur_work->func, cur_work->params);
 
 #ifdef ENABLE_FPSIMD_FOR_USER
-	is_fpsimd_get_task();
+	is_fpsimd_get_task(&fpsimd);
 	cur_work->func(cur_work->params);
-	is_fpsimd_put_task();
+	is_fpsimd_put_task(&fpsimd);
 #else
 	cur_work->func(cur_work->params);
 #endif
