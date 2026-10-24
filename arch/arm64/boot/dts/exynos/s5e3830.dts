@@ -3675,8 +3675,6 @@
 
 	panel_0 {
 		compatible = "samsung,exynos-panel";
-		ddi_id = <0x244040>;
-		lcd_info = <0x72>;
 		phandle = <0x116>;
 	};
 
