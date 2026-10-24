@@ -6822,6 +6822,18 @@
 		};
 	};
 
+	fragment@ramoops {
+		target = <0xffffffff>;
+
+		__overlay__ {
+
+			ramcon@f0f10000 {
+				// stock 4.19 dss log_pstore; earlycon=ramcon fills the zone stock recovery exposes as pmsg-ramoops-0
+				reg = <0x00 0xf0f10000 0x8000>;
+			};
+		};
+	};
+
 	__fixups__ {
 		exynos_adc = "/fragment@smd/__overlay__/samsung_mobile_device/sec_thermistor@1:io-channels:0", "/fragment@smd/__overlay__/samsung_mobile_device/sec_thermistor@0:io-channels:0", "/fragment@smd/__overlay__/samsung_mobile_device/battery:io-channels:0", "/fragment@smd/__overlay__/samsung_mobile_device/battery:io-channels:8", "/fragment@6/__overlay__/aud3004x@07:io-channels:0", "/fragment@6/__overlay__/aud3004x@07:io-channels:8";
 		gpg1 = "/fragment@smd/__overlay__/samsung_mobile_device/fixed_regulator@0:gpio:0", "/fragment@smd/__overlay__/samsung_mobile_device/gw3x:goodix,gpio_reset:0", "/fragment@17/__overlay__/pn547@2B:pn547,ven-gpio:0", "/fragment@17/__overlay__/pn547@2B:pn547,firm-gpio:0", "/fragment@17/__overlay__/pn547@2B:pn547,nfc-det-gpio:0", "/fragment@36/__overlay__/ilitek_ili9882x@0:iliteck,lcdid1-gpio:0", "/fragment@36/__overlay__/novatek@1:novatek,lcdid1-gpio:0", "/fragment@36/__overlay__/synaptics_tcm@2:synaptics,lcdid1-gpio:0";
@@ -6939,7 +6951,7 @@
 		mipi_phy_csis0_m0s4s4s2 = "/fragment@58/__overlay__:phys:0";
 		is_sensor2 = "/fragment@59:target:0";
 		panel_0 = "/fragment@65:target:0";
-		reserved_memory = "/fragment@sec_debug_next:target:0";
+		reserved_memory = "/fragment@sec_debug_next:target:0", "/fragment@ramoops:target:0";
 	};
 
 	__local_fixups__ {
