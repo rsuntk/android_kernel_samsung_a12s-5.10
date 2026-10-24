@@ -1028,12 +1028,11 @@ struct common_panel_info hx83104_a21s_default_panel_info = {
 	.i2c_data = &hx83104_a21s_i2c_data,
 };
 
-int __init hx83104_a21s_panel_init(void)
+static int __init hx83104_a21s_panel_init(void)
 {
 	register_common_panel(&hx83104_a21s_default_panel_info);
 
 	return 0;
 }
-/* called by mcd_panel_register */
-/* arch_initcall(hx83104_a21s_panel_init) */
+arch_initcall(hx83104_a21s_panel_init)
 #endif /* __HX83104_A21S_PANEL_H__ */

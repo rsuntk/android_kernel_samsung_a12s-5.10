@@ -304,7 +304,7 @@ int decon_fb_simple_notifier_call_chain(unsigned long val, int blank)
 EXPORT_SYMBOL(decon_fb_simple_notifier_call_chain);
 #endif
 
-int __init decon_notifier_init(void)
+static int __init decon_notifier_init(void)
 {
 	EVENT_NAME_LEN = EVENT_NAME[SMCDSD_EARLY_EVENT_BLANK] ? (u32)strlen(EVENT_NAME[SMCDSD_EARLY_EVENT_BLANK]) : EVENT_NAME_LEN;
 	STATE_NAME_LEN = STATE_NAME[FB_BLANK_POWERDOWN] ? (u32)strlen(STATE_NAME[FB_BLANK_POWERDOWN]) : STATE_NAME_LEN;
@@ -321,5 +321,5 @@ int __init decon_notifier_init(void)
 
 	return 0;
 }
-//core_initcall(decon_notifier_init);
+core_initcall(decon_notifier_init);
 

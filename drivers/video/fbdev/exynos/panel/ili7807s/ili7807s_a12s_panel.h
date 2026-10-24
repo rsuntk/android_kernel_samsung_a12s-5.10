@@ -749,7 +749,7 @@ static int __init a12s_blic_init(void)
 	return 0;
 }
 
-int __init ili7807s_a12s_panel_init(void)
+static int __init ili7807s_a12s_panel_init(void)
 {
 	a12s_blic_init();
 
@@ -757,6 +757,5 @@ int __init ili7807s_a12s_panel_init(void)
 
 	return 0;
 }
-/* called by mcd_panel_register */
-/* arch_initcall(ili7807s_a12s_panel_init) */
+arch_initcall(ili7807s_a12s_panel_init)
 #endif /* __ILI7807S_A12S_PANEL_H__ */

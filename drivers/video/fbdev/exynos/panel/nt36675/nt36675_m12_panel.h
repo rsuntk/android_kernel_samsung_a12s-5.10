@@ -2469,12 +2469,11 @@ struct common_panel_info nt36675_m12_default_panel_info = {
 	.i2c_data = &nt36675_m12_i2c_data,
 };
 
-int __init nt36675_m12_panel_init(void)
+static int __init nt36675_m12_panel_init(void)
 {
 	register_common_panel(&nt36675_m12_default_panel_info);
 
 	return 0;
 }
-/* called by mcd_panel_register */
-/* arch_initcall(nt36675_m12_panel_init) */
+arch_initcall(nt36675_m12_panel_init)
 #endif /* __NT36675_M12_PANEL_H__ */

@@ -1453,17 +1453,6 @@ static int panel_create_lcd_class(void)
 	return 0;
 }
 
-static int panel_destroy_lcd_class(void)
-{
-	if (!lcd_class)
-		return -EINVAL;
-
-	class_destroy(lcd_class);
-	lcd_class = NULL;
-
-	return 0;
-}
-
 static int panel_create_lcd_device(struct panel_device *panel, unsigned int id)
 {
 	char name[MAX_PANEL_DEV_NAME_SIZE];
@@ -3632,7 +3621,7 @@ static const struct of_device_id panel_drv_of_match_table[] = {
 };
 MODULE_DEVICE_TABLE(of, panel_drv_of_match_table);
 
-struct platform_driver panel_driver = {
+static struct platform_driver panel_driver = {
 	.probe = panel_drv_probe,
 	.driver = {
 		.name = "panel-drv",
@@ -3640,21 +3629,6 @@ struct platform_driver panel_driver = {
 		.of_match_table = of_match_ptr(panel_drv_of_match_table),
 	}
 };
-
-#if 1
-static int __init get_boot_panel_id(char *arg)
-{
-	get_option(&arg, &boot_panel_id);
-	panel_info("PANEL:INFO:%s:boot_panel_id : 0x%x\n",
-			__func__, boot_panel_id);
-
-	return 0;
-}
-
-early_param("lcdtype", get_boot_panel_id);
-#else
-module_param(boot_panel_id, int, S_IRUGO);
-#endif
 
 int get_blic_type(void)
 {
@@ -3669,33 +3643,28 @@ static int __init get_boot_blic_type(char *arg)
 
 	return 0;
 }
+
 early_param("blic_type", get_boot_blic_type);
 
-#if 0
+static int __init get_boot_panel_id(char *arg)
+{
+	get_option(&arg, &boot_panel_id);
+	panel_info("PANEL:INFO:%s:boot_panel_id : 0x%x\n",
+			__func__, boot_panel_id);
+
+	return 0;
+}
+
+early_param("lcdtype", get_boot_panel_id);
+
 static int __init panel_drv_init(void)
 {
-	int ret;
-
-	panel_info("++\n");
-	ret = panel_create_lcd_class();
-	if (ret < 0) {
-		panel_err("panel_create_lcd_class returned %d\n", ret);
-		return -EINVAL;
-	}
-	ret = platform_driver_register(&panel_driver);
-	if (ret) {
-		panel_err("failed to register panel driver\n");
-		return ret;
-	}
-	panel_info("--\n");
-
-	return ret;
+	return platform_driver_register(&panel_driver);
 }
 
 static void __exit panel_drv_exit(void)
 {
 	platform_driver_unregister(&panel_driver);
-	panel_destroy_lcd_class();
 }
 
 module_init(panel_drv_init);
@@ -3703,4 +3672,3 @@ module_exit(panel_drv_exit);
 MODULE_DESCRIPTION("Samsung's Panel Driver");
 MODULE_AUTHOR("<minwoo7945.kim@samsung.com>");
 MODULE_LICENSE("GPL");
-#endif

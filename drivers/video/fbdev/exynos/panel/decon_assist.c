@@ -183,7 +183,7 @@ void decon_assist_probe(struct panel_device *panel)
 	init_debugfs_brightness(panel);
 }
 
-int __init decon_assist_init(void)
+static int __init decon_assist_init(void)
 {
 	struct platform_device *pdev = NULL;
 	struct panel_device *pdata = NULL;
@@ -204,5 +204,5 @@ int __init decon_assist_init(void)
 
 	return 0;
 }
-//late_initcall_sync(decon_assist_init);
+late_initcall_sync(decon_assist_init);
 

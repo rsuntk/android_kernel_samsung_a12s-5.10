@@ -743,7 +743,7 @@ static int __init a12s_blic_init(void)
 	return 0;
 }
 
-int __init td4150_boe_a12s_panel_init(void)
+static int __init td4150_boe_a12s_panel_init(void)
 {
 	a12s_blic_init();
 
@@ -751,6 +751,5 @@ int __init td4150_boe_a12s_panel_init(void)
 
 	return 0;
 }
-/* called by mcd_panel_register */
-/* arch_initcall(td4150_boe_a12s_panel_init) */
+arch_initcall(td4150_boe_a12s_panel_init)
 #endif /* __TD4150_A12S_PANEL_H__ */

@@ -674,12 +674,11 @@ struct common_panel_info ili9882n_m12s_default_panel_info = {
 	.i2c_data = &ili9882n_m12s_i2c_data,
 };
 
-int __init ili9882n_m12s_panel_init(void)
+static int __init ili9882n_m12s_panel_init(void)
 {
 	register_common_panel(&ili9882n_m12s_default_panel_info);
 
 	return 0;
 }
-/* called by mcd_panel_register */
-/* arch_initcall(ili9882n_m12s_panel_init) */
+arch_initcall(ili9882n_m12s_panel_init)
 #endif /* __ILI9882N_M12S_PANEL_H__ */

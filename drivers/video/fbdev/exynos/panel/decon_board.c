@@ -1652,16 +1652,16 @@ int panel_clean_board(struct device *dev)
 }
 
 
-int __init decon_board_init(void)
+static int __init decon_board_init(void)
 {
 	panel_lut_ddi_recommend_init();
 	INIT_LIST_HEAD(&regulator_list);
 
 	return 0;
 }
-//core_initcall(decon_board_init);
+core_initcall(decon_board_init);
 
-int __init decon_board_late_initcall(void)
+static int __init decon_board_late_initcall(void)
 {
 	struct platform_device *pdev = of_find_device_by_path("/panel_drv@0");
 	struct device *dev = pdev ? &(pdev->dev) : NULL;
@@ -1669,10 +1669,10 @@ int __init decon_board_late_initcall(void)
 
 	return 0;
 }
-//late_initcall_sync(decon_board_late_initcall);
+late_initcall_sync(decon_board_late_initcall);
 
 #ifdef CONFIG_EXYNOS_DECON_LCD_A12S_BLIC_DUAL
-int __init a12s_regulator_core_initcall(void)
+static int __init a12s_regulator_core_initcall(void)
 {
 	struct device_node *np = NULL;
 	struct property *prop_new = NULL;
@@ -1703,10 +1703,5 @@ int __init a12s_regulator_core_initcall(void)
 
 	return 0;
 }
-#else
-int __init a12s_regulator_core_initcall(void)
-{
-	return 0;
-}
+core_initcall(a12s_regulator_core_initcall);
 #endif
-//core_initcall(a12s_regulator_core_initcall);
