@@ -1354,6 +1354,10 @@ void gether_disconnect(struct gether *link)
 
 	DBG(dev, "%s\n", __func__);
 
+	spin_lock(&dev->lock);
+	dev->port_usb = NULL;
+	spin_unlock(&dev->lock);
+
 	netif_stop_queue(dev->net);
 	netif_carrier_off(dev->net);
 
@@ -1399,18 +1403,12 @@ void gether_disconnect(struct gether *link)
 	dev->unwrap = NULL;
 	dev->wrap = NULL;
 
-	spin_lock(&dev->lock);
-	dev->port_usb = NULL;
-	spin_unlock(&dev->lock);
-
 	if (g_rndis_mp.en_timer) {
 		hrtimer_cancel(&g_rndis_mp.tx_timer);
 		g_rndis_mp.en_timer = 0;
 	}
 }
 EXPORT_SYMBOL_GPL(gether_disconnect);
-
-static int __init gether_init(void)
 {
 	memset(&g_rndis_mp, 0, sizeof(struct rndis_multipacket));
 	g_eth_dev = kmalloc(sizeof(*g_eth_dev), GFP_KERNEL);

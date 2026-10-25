@@ -52,6 +52,8 @@ UTS_VERSION="$(echo $UTS_VERSION $CONFIG_FLAGS $TIMESTAMP | cut -b -$UTS_LEN)"
 
 # Generate a temporary compile.h
 
+MSG="(Rissu Projekt - 5.10)"
+
 { echo /\* This file is auto generated, version $VERSION \*/
   if [ -n "$CONFIG_FLAGS" ] ; then echo "/* $CONFIG_FLAGS */"; fi
 
@@ -64,7 +66,7 @@ UTS_VERSION="$(echo $UTS_VERSION $CONFIG_FLAGS $TIMESTAMP | cut -b -$UTS_LEN)"
 
   LD_VERSION=$($LD -v | head -n1 | sed 's/(compatible with [^)]*)//' \
 		      | sed 's/[[:space:]]*$//')
-  printf '#define LINUX_COMPILER "%s"\n' "$CC_VERSION, $LD_VERSION"
+  printf '#define LINUX_COMPILER "%s"\n' "$CC_VERSION, $LD_VERSION, $MSG"
 } > .tmpcompile
 
 # Only replace the real compile.h if the new one is different,

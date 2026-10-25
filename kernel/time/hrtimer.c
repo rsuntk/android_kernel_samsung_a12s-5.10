@@ -1552,7 +1552,7 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 
 	lockdep_assert_held(&cpu_base->lock);
 
-	debug_deactivate(timer);
+	debug_hrtimer_deactivate(timer);
 	base->running = timer;
 
 	/*
@@ -2084,6 +2084,7 @@ int hrtimers_prepare_cpu(unsigned int cpu)
 	cpu_base->softirq_expires_next = KTIME_MAX;
 	hrtimer_cpu_base_init_expiry_lock(cpu_base);
 	restore_pcpu_tick(cpu);
+
 	return 0;
 }
 
