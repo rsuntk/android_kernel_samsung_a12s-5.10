@@ -1409,6 +1409,8 @@ void gether_disconnect(struct gether *link)
 	}
 }
 EXPORT_SYMBOL_GPL(gether_disconnect);
+
+static int __init gether_init(void)
 {
 	memset(&g_rndis_mp, 0, sizeof(struct rndis_multipacket));
 	g_eth_dev = kmalloc(sizeof(*g_eth_dev), GFP_KERNEL);
