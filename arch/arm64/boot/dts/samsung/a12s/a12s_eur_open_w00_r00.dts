@@ -1940,8 +1940,7 @@
 					compatible = "android,firmware";
 
 					vbmeta {
-						compatible = "android,vbmeta";
-						parts = "vbmeta,boot,system,vendor,product,odm,prism,optics,vbmeta_system,recovery,dtbo,keystorage";
+						status = "disabled";
 					};
 				};
 			};
