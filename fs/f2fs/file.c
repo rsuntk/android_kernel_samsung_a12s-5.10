@@ -36,11 +36,6 @@
 #include <trace/events/android_fs.h>
 #include <uapi/linux/f2fs.h>
 
-#ifdef CONFIG_FSCRYPT_SDP
-#include <linux/fscrypto_sdp_cache.h>
-#include <linux/fscrypto_sdp_ioctl.h>
-#endif
-
 static vm_fault_t f2fs_filemap_fault(struct vm_fault *vmf)
 {
 	struct inode *inode = file_inode(vmf->vma->vm_file);
@@ -4537,19 +4532,6 @@ static long __f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return f2fs_ioc_compress_file(filp, arg);
 	case F2FS_IOC_GET_VALID_NODE_COUNT:
 		return f2fs_ioc_get_valid_node_count(filp, arg);
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-#ifdef CONFIG_SDP_KEY_DUMP
-	case FS_IOC_DUMP_FILE_KEY:
-	case FS_IOC_TRACE_FILE:
-#endif
-		return fscrypt_sdp_ioctl(filp, cmd, arg);
-#endif
 	default:
 		return -ENOTTY;
 	}
@@ -4687,20 +4669,7 @@ static ssize_t f2fs_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	if (f2fs_should_use_dio(inode, iocb, to))
 		return f2fs_dio_read_iter(iocb, to);
 
-#ifdef CONFIG_FSCRYPT_SDP
-	//Check after writeback is completed.
-	if (fscrypt_sdp_file_not_readable(iocb->ki_filp)) {
-		ret = -EIO;
-		goto out;
-	}
-#endif
-
 	ret = generic_file_buffered_read(iocb, to, ret);
-
-#ifdef CONFIG_FSCRYPT_SDP
-	fscrypt_sdp_unset_file_io_ongoing(iocb->ki_filp);
-out:
-#endif
 
 	if (ret > 0)
 		f2fs_update_iostat(F2FS_I_SB(inode), APP_BUFFERED_READ_IO, ret);
@@ -5191,18 +5160,6 @@ long f2fs_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case F2FS_IOC_DECOMPRESS_FILE:
 	case F2FS_IOC_COMPRESS_FILE:
 	case F2FS_IOC_GET_VALID_NODE_COUNT:
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-#ifdef CONFIG_SDP_KEY_DUMP
-	case FS_IOC_DUMP_FILE_KEY:
-	case FS_IOC_TRACE_FILE:
-#endif // End of CONFIG_SDP_KEY_DUMP
-#endif // End of CONFIG_FSCRYPT_SDP
 		break;
 	default:
 		return -ENOIOCTLCMD;
