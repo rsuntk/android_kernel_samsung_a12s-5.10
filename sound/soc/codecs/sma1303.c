@@ -2652,7 +2652,7 @@ static int sma1303_dai_set_sysclk_amp(struct snd_soc_dai *dai,
 	return 0;
 }
 
-static int sma1303_dai_digital_mute(struct snd_soc_dai *dai, int mute)
+static int sma1303_dai_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 {
 	struct snd_soc_component *component = dai->component;
 	struct sma1303_priv *sma1303 = snd_soc_component_get_drvdata(component);
@@ -2762,7 +2762,8 @@ static const struct snd_soc_dai_ops sma1303_dai_ops_amp = {
 	.set_sysclk = sma1303_dai_set_sysclk_amp,
 	.set_fmt = sma1303_dai_set_fmt_amp,
 	.hw_params = sma1303_dai_hw_params_amp,
-	.digital_mute = sma1303_dai_digital_mute,
+	.mute_stream = sma1303_dai_mute_stream,
+	.no_capture_mute = 1,
 };
 
 #define SMA1303_RATES SNDRV_PCM_RATE_8000_192000
