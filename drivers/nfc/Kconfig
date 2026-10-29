@@ -123,16 +123,6 @@ config SEC_NFC_DUPLICATED_IRQ_WQ_QC
 	  and do not use enable_irq_wake() api to configure the GPIO
 	  as wakeup capable.
 
-config SEC_NFC_WAKELOCK_METHOD
-        int "nfc wakelock method"
-        default 0
-        help
-          Different functions must be used depending on the kernel version
-          for wakelock initialization.
-          0 - auto selection
-          1 - wakeup_source_init
-          2 - wakeup_source_register
-
 config NFC_PN547
 	bool "NXP PN547 NFC Controller Driver"
 	depends on I2C
