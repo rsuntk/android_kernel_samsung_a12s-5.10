@@ -250,7 +250,7 @@ config EXYNOS_TZASC_ILLEGAL_READ_LOGGING
 config EXYNOS_TZASC_ILLEGAL_ACCESS_PANIC
 	bool "Kernel Panic over TZASC Illegal Access"
 	depends on EXYNOS_TZASC_FAIL_DETECTOR
-	default y
+	default n
 	help
 	Kernel panic will occur in case that TZASC illegal
 	access is detected.
