@@ -1807,6 +1807,9 @@ config SND_SOC_TPA6130A2
 	tristate "Texas Instruments TPA6130A2 headphone amplifier"
 	depends on I2C
 
+config SND_SOC_SMA1303
+	tristate "SMA1303 speaker amplifier"
+	default n
 
 config SND_SMARTPA_AW8896
 	tristate "SoC Audio for awinic aw8896 series"
