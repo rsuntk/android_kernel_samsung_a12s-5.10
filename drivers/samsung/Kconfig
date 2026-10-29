@@ -106,3 +106,4 @@ config SAMSUNG_PRODUCT_SHIP
 endmenu
 source "drivers/samsung/misc/Kconfig"
 source "drivers/samsung/pm/Kconfig"
+

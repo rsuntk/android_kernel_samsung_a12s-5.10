@@ -37,3 +37,4 @@ config PINCTRL_SEC_GPIO_DVS
 	tristate "Samsung GPIO debugging and verification system"
 	depends on SEC_PM && PINCTRL_EXYNOS_ARM64
 	default n
+
