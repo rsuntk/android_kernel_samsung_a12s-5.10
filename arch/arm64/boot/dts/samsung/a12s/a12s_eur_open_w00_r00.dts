@@ -994,7 +994,7 @@
 						regulator-max-microvolt = <0x1b7740>;
 						regulator-ramp-delay = <0x2ee0>;
 						regulator-initial-mode = <0x03>;
-						regulator-always-on;
+						regulator-boot-on;
 					};
 
 					LDO29 {
