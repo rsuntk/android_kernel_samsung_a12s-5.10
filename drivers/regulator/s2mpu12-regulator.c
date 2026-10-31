@@ -662,8 +662,16 @@ int create_s2mpu12_sysfs(struct s2mpu12_info *s2mpu12)
 		 dev_driver_string(dev), dev_name(dev));
 
 	s2mpu12->pmic_sysfs = devm_kzalloc(dev, sizeof(struct pmic_sysfs_dev), GFP_KERNEL);
-	s2mpu12->pmic_sysfs->dev = pmic_device_create(s2mpu12, device_name);
-	sysfs_dev = s2mpu12->pmic_sysfs->dev;
+	if (!s2mpu12->pmic_sysfs)
+		return -ENOMEM;
+
+	sysfs_dev = pmic_device_create(s2mpu12, device_name);
+	if (IS_ERR_OR_NULL(sysfs_dev)) {
+		pr_err("%s: failed to create pmic device\n", __func__);
+		s2mpu12->pmic_sysfs = NULL;
+		return sysfs_dev ? PTR_ERR(sysfs_dev) : -ENODEV;
+	}
+	s2mpu12->pmic_sysfs->dev = sysfs_dev;
 
 	/* Create sysfs entries */
 	for (i = 0; i < ARRAY_SIZE(regulator_attr); i++) {
@@ -678,8 +686,9 @@ remove_pmic_device:
 	for (i--; i >= 0; i--)
 		device_remove_file(sysfs_dev, &regulator_attr[i].dev_attr);
 	pmic_device_destroy(sysfs_dev->devt);
+	s2mpu12->pmic_sysfs = NULL;
 
-	return -EINVAL;
+	return err;
 }
 #endif
 int s2mpu12_read_pwron_status(void)
