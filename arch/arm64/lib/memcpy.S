@@ -60,10 +60,3 @@ SYM_FUNC_END_PI(memcpy)
 EXPORT_SYMBOL(memcpy)
 SYM_FUNC_END_ALIAS(__memcpy)
 EXPORT_SYMBOL(__memcpy)
-<<<<<<< HEAD
-=======
-SYM_FUNC_END_ALIAS_PI(memmove)
-EXPORT_SYMBOL(memmove)
-SYM_FUNC_END_ALIAS(__memmove)
-EXPORT_SYMBOL(__memmove)
->>>>>>> a5fb7e965a06 (arm64: Update string routine copyrights and URLs)
