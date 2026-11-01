@@ -783,6 +783,7 @@
 				s2mpu12,wakeup = "enabled";
 				reg = <0x1f>;
 				interrupts = <0x00 0x38 0x04>;
+				interrupt-parent = <0xffffffff>;
 				pinctrl-names = "default";
 				pinctrl-0 = <0x0f>;
 				wtsr_en = "enabled";
@@ -790,15 +791,14 @@
 				wtsr_timer_val = <0x03>;
 				smpl_timer_val = <0x00>;
 				check_jigon = <0x00>;
-				pmic_loop_bw;
 				init_time,sec = <0x00>;
 				init_time,min = <0x00>;
 				init_time,hour = <0x0c>;
 				init_time,mday = <0x01>;
 				init_time,mon = <0x00>;
-				init_time,year = <0x79>;
-				init_time,wday = <0x05>;
-				interrupt-parent = <0xffffffff>;
+				init_time,year = <0x7a>;
+				init_time,wday = <0x06>;
+				pmic_loop_bw;
 
 				s2mpu12-keys {
 
