@@ -6,6 +6,8 @@ obj-$(CONFIG_EXYNOS_PD)         += exynos-pd.o
 obj-$(CONFIG_EXYNOS_PD_EL3)       += exynos-el3_mon.o
 obj-$(CONFIG_EXYNOS_PD_DBG)	+= exynos-pd-dbg.o
 
+obj-$(CONFIG_EXYNOS_ASV_ARM)	+= exynos5422-asv.o
+
 obj-$(CONFIG_EXYNOS_PMU)	+= exynos-pmu.o
 
 obj-$(CONFIG_EXYNOS_PMU_ARM_DRIVERS)	+= exynos3250-pmu.o exynos4-pmu.o \
@@ -16,7 +18,7 @@ obj-$(CONFIG_EXYNOS_ACPM)       += acpm/
 obj-$(CONFIG_EXYNOS_FLEXPMU_DBG)        += exynos-flexpmu-dbg.o
 obj-$(CONFIG_EXYNOS_PM_DOMAINS) += pm_domains.o
 obj-$(CONFIG_EXYNOS_PM)		+= exynos-pm.o
-obj-$(CONFIG_EXYNOS_CHIPID)	+= exynos-chipid.o
+obj-$(CONFIG_EXYNOS_CHIPID)	+= exynos-chipid.o exynos-asv.o
 
 # Exynos Memlogger
 obj-$(CONFIG_EXYNOS_MEMORY_LOGGER)      += memlogger.o
