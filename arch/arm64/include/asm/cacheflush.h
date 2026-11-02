@@ -135,6 +135,14 @@ extern void copy_to_user_page(struct vm_area_struct *, struct page *,
 #define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE 1
 extern void flush_dcache_page(struct page *);
 
+#define ___flush_dcache_area(start, sz)                                                                                    \
+    ({                                                                                                                 \
+        unsigned long __start = (start);                                                                               \
+        unsigned long __end = __start + (sz);                                                                          \
+        dcache_clean_inval_poc(__start, __end);                                                                        \
+    })
+#define __flush_dcache_area(start, end) ___flush_dcache_area(start, end)
+
 static __always_inline void icache_inval_all_pou(void)
 {
 	if (cpus_have_const_cap(ARM64_HAS_CACHE_DIC))
