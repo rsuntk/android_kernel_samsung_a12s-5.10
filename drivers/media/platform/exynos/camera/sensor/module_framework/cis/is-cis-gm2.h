@@ -32,7 +32,7 @@
 #define SENSOR_GM2_COARSE_INTEGRATION_TIME_MIN_4SUM_240     (3) /* 4 Binning Mode 240 fps */
 #define SENSOR_GM2_COARSE_INTEGRATION_TIME_MAX_MARGIN       (5)
 
-#define SENSOR_GM2_FRAME_LENGTH_LINE_ADDR      (0x0340)  
+#define SENSOR_GM2_FRAME_LENGTH_LINE_ADDR      (0x0340)
 #define SENSOR_GM2_LINE_LENGTH_PCK_ADDR        (0x0342)
 #define SENSOR_GM2_FINE_INTEG_TIME_ADDR        (0x0200)
 #define SENSOR_GM2_COARSE_INTEG_TIME_ADDR      (0x0202)
@@ -58,10 +58,11 @@
 
 /* Related Function Option */
 #define WRITE_SENSOR_CAL_FOR_GGC                (1)
-#define SENSOR_GM2_CAL_DEBUG                    (0)
 #define SENSOR_GM2_DEBUG_INFO                   (0)
 
-#define SENSOR_GM2_GGC_DUMP_NAME                "/data/vendor/camera/GM2_GGC_DUMP.bin"
+#ifdef USE_SENSOR_WDR
+//#define USE_SENSOR_GM2_WDR
+#endif
 
 /*
  * [Mode Information]
