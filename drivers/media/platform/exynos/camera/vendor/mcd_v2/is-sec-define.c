@@ -1276,13 +1276,11 @@ int is_sec_update_dualized_sensor(struct is_core *core, int position)
 			sensorid_2nd = sensorid_1st;
 			sensorid_1st = specific->sensor_id[position];
 
-#if 0
-			/* Update specific for dualized for OTPROM */
-			if (specific->rom_data[position].rom_type == ROM_TYPE_OTPROM) {
-				specific->rom_client[position] = specific->dualized_rom_client[position];
-				specific->rom_cal_map_addr[position] = specific->dualized_rom_cal_map_addr[position];
-			}
-#endif
+			/* the OTPROM is read through the CIS client of the sensor in use */
+			if (specific->rom_data[position].rom_type == ROM_TYPE_OTPROM &&
+			    specific->dualized_rom_client[position])
+				swap(specific->rom_client[position],
+				     specific->dualized_rom_client[position]);
 
 			if (count_check < NUM_OF_DUALIZATION_CHECK - 2) {
 				err("Failed to find out both sensors on this device !!! (count : %d)",
@@ -3012,6 +3010,195 @@ int is_sec_readcal_otprom_gc02m1(int rom_id, struct is_rom_info *finfo,
 					GC02M1_OTP_START_ADDR, GC02M1_OTP_USED_CAL_SIZE);
 }
 
+static int is_sec_i2c_read_otp_sr846(struct i2c_client *client, char *buf,
+				     u16 start_addr, size_t size)
+{
+	u16 curr_addr = start_addr;
+	int ret;
+	int index;
+
+	for (index = 0; index < size; index++) {
+		ret = is_sensor_write8(client, SR846_OTP_ACCESS_ADDR_H, (curr_addr >> 8) & 0x1F);
+		ret |= is_sensor_write8(client, SR846_OTP_ACCESS_ADDR_L, curr_addr & 0xFF);
+		ret |= is_sensor_write8(client, SR846_OTP_MODE_ADDR, 0x01);
+		if (unlikely(ret)) {
+			err("failed to is_sensor_write8 (%d)\n", ret);
+			return ret;
+		}
+
+		ret = is_sensor_read8(client, SR846_OTP_READ_ADDR, &buf[index]);
+		if (unlikely(ret)) {
+			err("failed to is_sensor_read8 (%d)\n", ret);
+			return ret;
+		}
+		curr_addr++;
+	}
+
+	return 0;
+}
+
+int is_sec_readcal_otprom_sr846(int rom_id, struct is_rom_info *finfo,
+				char *buf, int position)
+{
+	struct is_core *core = is_get_is_core();
+	struct is_vender_specific *specific = core->vender.private_data;
+	struct i2c_client *client = specific->rom_client[rom_id];
+	u16 start_addr;
+	u8 otp_bank = 0;
+	int ret;
+
+	if (!client) {
+		err("%s: rom_id %d has no i2c client\n", __func__, rom_id);
+		return -EINVAL;
+	}
+
+	/* SR846 is the dualized front sensor, its map is the rom_dualized_* set */
+	is_sec_readcal_eeprom_dualized(rom_id);
+
+	ret = is_sec_set_registers(client, sensor_sr846_setfile_otp_init,
+				   ARRAY_SIZE(sensor_sr846_setfile_otp_init), position);
+	if (unlikely(ret)) {
+		err("failed to apply sr846 otprom init settings (%d)\n", ret);
+		return -EINVAL;
+	}
+
+	ret = is_sensor_write8(client, SR846_CP_TRIM_H_ADDR, 0x01);
+	ret |= is_sensor_write8(client, SR846_IPGM_TRIM_H_ADDR, 0x09);
+	ret |= is_sensor_write8(client, SR846_FSYNC_OUTPUT_ENABLE_ADDR, 0x00);
+	ret |= is_sensor_write8(client, SR846_FSYNC_OUTPUT_DRIVABILITY_ADDR, 0x07);
+	ret |= is_sensor_write8(client, SR846_OTP_R_W_MODE_ADDR, 0x10);
+	ret |= is_sensor_write8(client, SR846_STANDBY_ADDR, 0x01);
+	msleep(10);
+
+	ret |= is_sensor_write8(client, SR846_OTP_ACCESS_ADDR_H, (SR846_OTP_BANK_SELECT_ADDR >> 8) & 0x1F);
+	ret |= is_sensor_write8(client, SR846_OTP_ACCESS_ADDR_L, SR846_OTP_BANK_SELECT_ADDR & 0xFF);
+	ret |= is_sensor_write8(client, SR846_OTP_MODE_ADDR, 0x01);
+	ret |= is_sensor_read8(client, SR846_OTP_READ_ADDR, &otp_bank);
+	if (unlikely(ret)) {
+		err("failed to select sr846 otp bank (%d)\n", ret);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	start_addr = otp_bank == 0x03 ? SR846_OTP_START_ADDR_BANK2 : SR846_OTP_START_ADDR_BANK1;
+	info("%s: otp_bank = 0x%x, start_addr = 0x%x\n", __func__, otp_bank, start_addr);
+
+	ret = is_sec_readcal_otprom_gc(rom_id, finfo, buf, client,
+				       is_sec_i2c_read_otp_sr846, start_addr,
+				       SR846_OTP_USED_CAL_SIZE);
+
+exit:
+	is_sensor_write8(client, SR846_STREAM_OFF_ADDR, 0x0A);
+	is_sensor_write8(client, SR846_STANDBY_ADDR, 0x00);
+	msleep(10);
+	is_sensor_write8(client, SR846_OTP_MODE_ADDR, 0x00);
+	is_sensor_write8(client, SR846_OTP_R_W_MODE_ADDR, 0x00);
+	msleep(1);
+
+	return ret;
+}
+
+static int is_sec_i2c_read_otp_front_4ha(struct i2c_client *client, char *buf,
+					 u16 start_addr, size_t size)
+{
+	u16 curr_addr = start_addr;
+	u16 curr_page;
+	u8 otp_bank = 0;
+	int ret;
+	int index;
+
+	ret = is_sensor_write8(client, S5K4HA_OTP_PAGE_SELECT_ADDR, S5K4HA_OTP_START_PAGE_BANK1);
+	ret |= is_sensor_read8(client, S5K4HA_OTP_BANK_SELECT, &otp_bank);
+	if (unlikely(ret)) {
+		err("failed to select 4ha otp bank (%d)\n", ret);
+		return ret;
+	}
+
+	curr_page = otp_bank == 0x03 ? S5K4HA_FRONT_OTP_START_PAGE_BANK2 : S5K4HA_OTP_START_PAGE_BANK1;
+	info("%s: otp_bank = 0x%x, page = 0x%x\n", __func__, otp_bank, curr_page);
+
+	ret = is_sensor_write8(client, S5K4HA_OTP_PAGE_SELECT_ADDR, curr_page);
+	if (unlikely(ret))
+		return ret;
+
+	for (index = 0; index < size; index++) {
+		ret = is_sensor_read8(client, curr_addr, &buf[index]);
+		if (unlikely(ret)) {
+			err("failed to is_sensor_read8 (%d)\n", ret);
+			return ret;
+		}
+
+		curr_addr++;
+		if (curr_addr > S5K4HA_OTP_PAGE_ADDR_H) {
+			curr_addr = S5K4HA_OTP_PAGE_ADDR_L;
+			curr_page++;
+			ret = is_sensor_write8(client, S5K4HA_OTP_PAGE_SELECT_ADDR, curr_page);
+			if (unlikely(ret))
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
+int is_sec_readcal_otprom_front_4ha(int rom_id, struct is_rom_info *finfo,
+				    char *buf, int position)
+{
+	struct is_core *core = is_get_is_core();
+	struct is_vender_specific *specific = core->vender.private_data;
+	struct i2c_client *client = specific->rom_client[rom_id];
+	u8 read_done = 0;
+	int retry = IS_CAL_RETRY_CNT;
+	int ret;
+
+	if (!client) {
+		err("%s: rom_id %d has no i2c client\n", __func__, rom_id);
+		return -EINVAL;
+	}
+
+	if (!is_vendor_check_camera_running(finfo->rom_power_position)) {
+		ret = is_sec_set_registers(client, sensor_otp_4ha_global,
+					   sensor_otp_4ha_global_size, position);
+		if (unlikely(ret)) {
+			err("failed to apply 4ha otprom global settings (%d)\n", ret);
+			return -EINVAL;
+		}
+	}
+
+	ret = is_sensor_write8(client, 0x0100, 0x01);
+	msleep(50);
+	ret |= is_sensor_write8(client, S5K4HA_STANDBY_ADDR, 0x00);
+	msleep(10);
+	ret |= is_sensor_write8(client, S5K4HA_OTP_R_W_MODE_ADDR, 0x01);
+	if (unlikely(ret)) {
+		err("failed to start 4ha otp read (%d)\n", ret);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	do {
+		msleep(1);
+		ret = is_sensor_read8(client, S5K4HA_OTP_CHECK_ADDR, &read_done);
+	} while ((ret || read_done != 1) && retry-- > 0);
+
+	if (read_done != 1) {
+		err("4ha otp read command did not complete (%d, 0x%x)\n", ret, read_done);
+		ret = -EIO;
+		goto exit;
+	}
+
+	ret = is_sec_readcal_otprom_gc(rom_id, finfo, buf, client,
+				       is_sec_i2c_read_otp_front_4ha,
+				       S5K4HA_OTP_START_ADDR, S5K4HA_OTP_USED_CAL_SIZE);
+
+exit:
+	is_sensor_write8(client, S5K4HA_OTP_R_W_MODE_ADDR, 0x04);
+	msleep(1);
+	is_sensor_write8(client, S5K4HA_OTP_R_W_MODE_ADDR, 0x00);
+
+	return ret;
+}
+
 int is_sec_readcal_otprom(int rom_id)
 {
 	int ret = 0;
@@ -3040,11 +3227,12 @@ int is_sec_readcal_otprom(int rom_id)
 	case SENSOR_NAME_S5K3L6:
 		ret = is_sec_readcal_otprom_3l6(rom_id, finfo, buf, position);
 		break;
-#if 0
-		case SENSOR_NAME_S5K4HA:
-			ret = is_sec_readcal_otprom_4ha(rom_id);
-			break;
-#endif
+	case SENSOR_NAME_SR846:
+		ret = is_sec_readcal_otprom_sr846(rom_id, finfo, buf, position);
+		break;
+	case SENSOR_NAME_S5K4HA:
+		ret = is_sec_readcal_otprom_front_4ha(rom_id, finfo, buf, position);
+		break;
 	default:
 		err("[%s] No supported sensor_id:%d for rom_id:%d", __func__,
 			sensor_id, rom_id);
