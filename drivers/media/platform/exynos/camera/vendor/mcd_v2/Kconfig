@@ -82,3 +82,9 @@ config CAMERA_AAV_V14
         default n
         help
           This camera is aav_v14 project
+config CAMERA_AAU_V12S
+        bool "This camera is aau_v12s project"
+        depends on VENDER_MCD_V2
+        default n
+        help
+          This camera is aau_v12s project
