@@ -66,7 +66,7 @@ int kbase_backend_gpuprops_get(struct kbase_device *kbdev, struct kbasep_gpuprop
 	/* AMBA_FEATURES enum is mapped to COHERENCY_FEATURES enum */
 	/* EXYNOS TODO: determine if needed by userspace */
 	mali_exynos_coherency_set_coherency_feature();
-	regdump->coherency_features = kbase_reg_read(kbdev,
+	regdump->coherency_features = kbase_reg_read32(kbdev,
 							GPU_CONTROL_REG(COHERENCY_FEATURES));
 	//regdump->coherency_features = KBASE_REG_READ(kbdev, GPU_CONTROL_ENUM(COHERENCY_FEATURES));
 
