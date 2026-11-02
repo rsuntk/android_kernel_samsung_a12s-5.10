@@ -5309,6 +5309,50 @@
 		};
 	};
 
+	is_sensor3@14400000 {
+		compatible = "samsung,exynos-is-sensor";
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+		reg = <0x00 0x14400000 0x1000 0x00 0x14490000 0x10000>;
+		reg-names = "csi", "phy";
+		interrupts = <0x00 0x8d 0x04 0x00 0x90 0x04 0x00 0x90 0x04 0x00 0x90 0x04 0x00 0x90 0x04>;
+		interrupt-names = "csi", "mode0_VC0", "mode0_VC1", "mode0_VC2", "mode0_VC3";
+		phys = <0x91 0x00>;
+		phy-names = "csis_dphy";
+		clocks = <0x03 0x1d8 0x03 0x1d9 0x03 0x1da 0x03 0x1c2 0x03 0x1c3 0x03 0x1c4>;
+		clock-names = "CIS_CLK0", "CIS_CLK1", "CIS_CLK2", "GATE_CSIS0_QCH", "GATE_CSIS1_QCH", "GATE_CSIS2_QCH";
+		iommus = <0x8d>;
+		samsung,iommu-group = <0x8b>;
+		phandle = <0x160>;
+
+		sensor3-ch-mode0 {
+			reg = <0x14431000 0x100 0x14431400 0x100 0x14431100 0x100 0x14431400 0x100 0x14431200 0x100 0x14431400 0x100 0x14431300 0x100 0x14431400 0x100>;
+			phandle = <0x161>;
+		};
+	};
+
+	is_sensor4@14420000 {
+		compatible = "samsung,exynos-is-sensor";
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+		reg = <0x00 0x14420000 0x1000 0x00 0x144b0000 0x10000>;
+		reg-names = "csi", "phy";
+		interrupts = <0x00 0x8f 0x04 0x00 0x91 0x04 0x00 0x91 0x04 0x00 0x91 0x04 0x00 0x91 0x04>;
+		interrupt-names = "csi", "mode0_VC0", "mode0_VC1", "mode0_VC2", "mode0_VC3";
+		phys = <0x93 0x00>;
+		phy-names = "csis_dphy";
+		clocks = <0x03 0x1d8 0x03 0x1d9 0x03 0x1da 0x03 0x1c2 0x03 0x1c3 0x03 0x1c4>;
+		clock-names = "CIS_CLK0", "CIS_CLK1", "CIS_CLK2", "GATE_CSIS0_QCH", "GATE_CSIS1_QCH", "GATE_CSIS2_QCH";
+		iommus = <0x8d>;
+		samsung,iommu-group = <0x8b>;
+		phandle = <0x162>;
+
+		sensor4-ch-mode0 {
+			reg = <0x14432000 0x100 0x14432400 0x100 0x14432100 0x100 0x14432400 0x100 0x14432200 0x100 0x14432400 0x100 0x14432300 0x100 0x14432400 0x100>;
+			phandle = <0x163>;
+		};
+	};
+
 	lic-lut-origin {
 		phandle = <0x152>;
 
@@ -6535,6 +6579,10 @@
 		sensor1_ch_mode0 = "/is_sensor1@14410000/sensor1-ch-mode0";
 		is_sensor2 = "/is_sensor2@14420000";
 		sensor2_ch_mode0 = "/is_sensor2@14420000/sensor2-ch-mode0";
+		is_sensor3 = "/is_sensor3@14400000";
+		sensor3_ch_mode0 = "/is_sensor3@14400000/sensor3-ch-mode0";
+		is_sensor4 = "/is_sensor4@14420000";
+		sensor4_ch_mode0 = "/is_sensor4@14420000/sensor4-ch-mode0";
 		lic_lut_origin = "/lic-lut-origin";
 		gic = "/interrupt-controller@12a00000";
 		clock = "/clock-controller@0x120e0000";
@@ -7256,6 +7304,18 @@
 		};
 
 		is_sensor2@14420000 {
+			phys = <0x00>;
+			clocks = <0x00 0x08 0x10 0x18 0x20 0x28>;
+			iommus = <0x00>;
+			samsung,iommu-group = <0x00>;
+		};
+		is_sensor3@14420000 {
+			phys = <0x00>;
+			clocks = <0x00 0x08 0x10 0x18 0x20 0x28>;
+			iommus = <0x00>;
+			samsung,iommu-group = <0x00>;
+		};
+		is_sensor4@14420000 {
 			phys = <0x00>;
 			clocks = <0x00 0x08 0x10 0x18 0x20 0x28>;
 			iommus = <0x00>;

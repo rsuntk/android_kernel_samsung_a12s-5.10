@@ -53,6 +53,7 @@ struct is_vender_specific {
 #endif /* CONFIG_OIS_USE */
 
 	struct i2c_client	*rom_client[ROM_ID_MAX];
+	struct i2c_client	*dualized_rom_client[ROM_ID_MAX];
 	struct is_rom_data				rom_data[SENSOR_POSITION_MAX];
 	const struct is_vender_rom_addr		*rom_cal_map_addr[SENSOR_POSITION_MAX];
 	bool		rom_valid[ROM_ID_MAX];

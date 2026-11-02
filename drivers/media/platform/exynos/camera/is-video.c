@@ -517,51 +517,6 @@ static void sbggr16_sps(struct is_frame_cfg *fc, unsigned int sizes[])
 	sizes[p] = SIZE_OF_META_PLANE;
 }
 
-/* V4L2_PIX_FMT_SRGB24_SP */
-static void srgb24_sps(struct is_frame_cfg *fc, unsigned int sizes[])
-{
-	struct is_fmt *fmt = fc->format;
-	int num_i_planes = fmt->num_planes - NUM_OF_META_PLANE;
-	int p;
-
-	dbg("%s, w:%d x h:%d\n", fmt->name, fc->width, fc->height);
-
-	for (p = 0; p < num_i_planes; p++)
-		sizes[p] = ALIGN(fc->width * fc->height, 16) * 3;
-
-	sizes[p] = SIZE_OF_META_PLANE;
-}
-
-/* V4L2_PIX_FMT_SRGB36P_SP */
-static void srgb36p_sps(struct is_frame_cfg *fc, unsigned int sizes[])
-{
-	struct is_fmt *fmt = fc->format;
-	int num_i_planes = fmt->num_planes - NUM_OF_META_PLANE;
-	int p;
-
-	dbg("%s, w:%d x h:%d\n", fmt->name, fc->width, fc->height);
-
-	for (p = 0; p < num_i_planes; p++)
-		sizes[p] = ALIGN(fc->width * fc->height * 12 / 8, 16) * 3;
-
-	sizes[p] = SIZE_OF_META_PLANE;
-}
-
-/* V4L2_PIX_FMT_SRGB36_SP */
-static void srgb36_sps(struct is_frame_cfg *fc, unsigned int sizes[])
-{
-	struct is_fmt *fmt = fc->format;
-	int num_i_planes = fmt->num_planes - NUM_OF_META_PLANE;
-	int p;
-
-	dbg("%s, w:%d x h:%d\n", fmt->name, fc->width, fc->height);
-
-	for (p = 0; p < num_i_planes; p++)
-		sizes[p] = ALIGN(fc->width * fc->height * 2, 16) * 3;
-
-	sizes[p] = SIZE_OF_META_PLANE;
-}
-
 static struct is_fmt is_formats[] = {
 	{
 		.name		= "YUV 4:4:4 packed, YCbCr",
@@ -2517,7 +2472,7 @@ int is_video_s_ctrl(struct file *file,
 		is_resource_dump();
 
 		if (ctrl->value)
-			panic("intentional panic from camera HAL");
+			err("camera HAL requested a panic, ignored");
 		break;
 	case V4L2_CID_IS_DVFS_CLUSTER0:
 	case V4L2_CID_IS_DVFS_CLUSTER1:

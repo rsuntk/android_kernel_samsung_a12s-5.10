@@ -41,6 +41,9 @@
 #include "is-cis-gm2-setB.h"
 
 #include "is-helper-i2c.h"
+#ifdef CONFIG_VENDER_MCD_V2
+#include "is-sec-define.h"
+#endif
 
 #define SENSOR_NAME "S5KGM2"
 /* #define DEBUG_GM2_PLL */
@@ -169,6 +172,87 @@ static void sensor_gm2_cis_data_calculation(const struct sensor_pll_info_compact
 	cis_data->max_margin_coarse_integration_time = SENSOR_GM2_COARSE_INTEGRATION_TIME_MAX_MARGIN;
 }
 
+int sensor_gm2_cis_GGC_write(struct v4l2_subdev *subdev)
+{
+	int ret = 0;
+	int i = 0;
+	struct is_cis *cis;
+	struct i2c_client *client = NULL;
+
+	ulong cal_addr;
+	u8 cal_data[SENSOR_GM2_GGC_CAL_SIZE] = {0, };
+	char *rom_cal_buf = NULL;
+
+	u16 start_addr, data_size;
+
+	FIMC_BUG(!subdev);
+
+	cis = (struct is_cis *)v4l2_get_subdevdata(subdev);
+	FIMC_BUG(!cis);
+	FIMC_BUG(!cis->cis_data);
+
+	client = cis->client;
+	if (unlikely(!client)) {
+		err("client is NULL");
+		return -EINVAL;
+	}
+
+	ret = is_sec_get_cal_buf(&rom_cal_buf, ROM_ID_REAR);
+	if (ret < 0) {
+		goto p_err;
+	}
+
+	cal_addr = (ulong)rom_cal_buf;
+	cal_addr += SENSOR_GM2_GGC_CAL_BASE_REAR;
+
+	memcpy(cal_data, (u16 *)cal_addr, SENSOR_GM2_GGC_CAL_SIZE);
+
+	if (cal_data[0] == 0xFF && cal_data[1] == 0x00) {
+		/* Big Endian */
+		start_addr = SENSOR_GM2_GGC_REG_ADDR;
+		data_size = SENSOR_GM2_GGC_CAL_SIZE - 2;
+
+		is_sensor_write16(client, 0x6028, 0x2000);
+		is_sensor_write16(client, 0x602A, SENSOR_GM2_GGC_REG_ADDR);
+
+		for (i = 0; i < data_size ; i++)
+			is_sensor_write8(client, 0x6F12, cal_data[i+2]);
+	} else {
+		/* To do check : Little Endian (0x00, 0xFF), Invalid (0xFF, 0xFF) */
+		err("sensor_gm2_cis_GGC_write skip : (%#x, %#x) \n", cal_data[0] , cal_data[1]);
+		goto p_err;
+	}
+
+	dbg_sensor(1, "[%s] GGC write done\n", __func__);
+
+/* for Test
+	sensor_gm2_i2c_read16(client, SENSOR_GM2_GGC_REG_ADDR, 5);
+*/
+
+p_err:
+	return ret;
+}
+
+#ifdef USE_AP_PDAF
+static void sensor_gm2_cis_set_paf_stat_enable(u32 mode, cis_shared_data *cis_data)
+{
+	WARN_ON(!cis_data);
+
+	switch (mode) {
+	case SENSOR_GM2_2X2BIN_FULL_4000X3000_30FPS:
+	case SENSOR_GM2_2X2BIN_CROP_4000X2256_30FPS:
+	case SENSOR_GM2_2X2BIN_CROP_4000X1844_30FPS:
+	case SENSOR_GM2_2X2BIN_CROP_3664X3000_30FPS:
+	case SENSOR_GM2_2X2BIN_CROP_3000X3000_30FPS:
+		cis_data->is_data.paf_stat_enable = true;
+		break;
+	default:
+		cis_data->is_data.paf_stat_enable = false;
+		break;
+	}
+}
+#endif
+
 int sensor_gm2_cis_check_rev(struct is_cis *cis)
 {
 	int ret = 0;
@@ -258,7 +342,7 @@ int sensor_gm2_cis_init(struct v4l2_subdev *subdev)
 	cis->cis_data->low_expo_start = 33000;
 	cis->need_mode_change = false;
 
-	if (cis->cis_data->cis_rev == 0xA1) {
+	if (cis->cis_data->cis_rev >= 0xA1) {
 		is_info("%s setfile_B\n", __func__);
 #if SENSOR_GM2_BURST_WRITE
 		sensor_gm2_global = sensor_gm2_setfile_B_Global_Burst;
@@ -452,6 +536,10 @@ int sensor_gm2_cis_set_global_setting(struct v4l2_subdev *subdev)
 
 	dbg_sensor(1, "[%s] global setting done\n", __func__);
 
+#if WRITE_SENSOR_CAL_FOR_GGC
+	sensor_gm2_cis_GGC_write(subdev);
+#endif
+
 p_err:
 	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 
@@ -477,6 +565,10 @@ int sensor_gm2_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 	sensor_gm2_cis_data_calculation(sensor_gm2_pllinfos[mode], cis->cis_data);
 	sensor_gm2_set_integration_max_margin(mode, cis->cis_data);
 	sensor_gm2_set_integration_min(mode, cis->cis_data);
+
+#ifdef USE_AP_PDAF
+	sensor_gm2_cis_set_paf_stat_enable(mode, cis->cis_data);
+#endif
 
 	I2C_MUTEX_LOCK(cis->i2c_lock);
 
@@ -664,13 +756,18 @@ int sensor_gm2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	struct is_cis *cis;
 	struct i2c_client *client;
 	cis_shared_data *cis_data;
-
-	u16 long_coarse_int = 0;
-	u16 short_coarse_int = 0;
 	u32 line_length_pck = 0;
 	u32 min_fine_int = 0;
 	u64 numerator;
 	u8 lte_shifter = 0;
+
+#ifdef USE_SENSOR_GM2_WDR
+	u16 long_coarse_int = 0;
+	u16 short_coarse_int = 0;
+#else
+	u16 coarse_int = 0;
+#endif
+
 #ifdef DEBUG_SENSOR_TIME
 	struct timeval st, end;
 
@@ -705,13 +802,20 @@ int sensor_gm2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	line_length_pck = cis_data->line_length_pck;
 	min_fine_int = cis_data->min_fine_integration_time;
 
+#ifdef USE_SENSOR_GM2_WDR
 	numerator = (u64)cis_data->pclk * target_exposure->long_val;
 	long_coarse_int = (numerator - min_fine_int)
 					/(1000 * 1000) / line_length_pck / (1 << lte_shifter);
 	numerator = (u64)cis_data->pclk * target_exposure->short_val;
 	short_coarse_int = (numerator - min_fine_int)
 					/(1000 * 1000) / line_length_pck / (1 << lte_shifter);
+#else
+	numerator = (u64)cis_data->pclk * target_exposure->val;
+	coarse_int = (numerator - min_fine_int)
+					/(1000*1000) / line_length_pck / (1 << lte_shifter);
+#endif
 
+#ifdef USE_SENSOR_GM2_WDR
 	if (long_coarse_int > cis_data->max_coarse_integration_time) {
 		dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), long coarse(%d) max(%d)\n", cis->id, __func__,
 			cis_data->sen_vsync_count, long_coarse_int, cis_data->max_coarse_integration_time);
@@ -735,6 +839,19 @@ int sensor_gm2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 			cis_data->sen_vsync_count, short_coarse_int, cis_data->min_coarse_integration_time);
 		short_coarse_int = cis_data->min_coarse_integration_time;
 	}
+#else
+	if (coarse_int > cis_data->max_coarse_integration_time) {
+		dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), coarse(%d) max(%d)\n", cis->id, __func__,
+			cis_data->sen_vsync_count, coarse_int, cis_data->max_coarse_integration_time);
+		coarse_int = cis_data->max_coarse_integration_time;
+	}
+
+	if (coarse_int < cis_data->min_coarse_integration_time) {
+		dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), coarse(%d) min(%d)\n", cis->id, __func__,
+			cis_data->sen_vsync_count, coarse_int, cis_data->min_coarse_integration_time);
+		coarse_int = cis_data->min_coarse_integration_time;
+	}
+#endif
 
 	I2C_MUTEX_LOCK(cis->i2c_lock);
 
@@ -744,6 +861,7 @@ int sensor_gm2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 		goto p_err;
 	}
 
+#ifdef USE_SENSOR_GM2_WDR
 	/* Short exposure */
 	ret = is_sensor_write16(client, SENSOR_GM2_COARSE_INTEG_TIME_ADDR, short_coarse_int);
 	if (ret < 0)
@@ -761,6 +879,14 @@ int sensor_gm2_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), frame_length_lines(%#x), long_coarse_int %#x, short_coarse_int %#x\n",
 		cis->id, __func__, cis_data->sen_vsync_count, cis_data->frame_length_lines,
 		long_coarse_int, short_coarse_int);
+#else
+	ret = is_sensor_write16(client, SENSOR_GM2_COARSE_INTEG_TIME_ADDR, coarse_int);
+	if (ret < 0)
+		goto p_err;
+
+	dbg_sensor(1, "[MOD:D:%d] %s, vsync_cnt(%d), frame_length_lines(%#x), coarse_int %#x\n",
+		cis->id, __func__, cis_data->sen_vsync_count, cis_data->frame_length_lines, coarse_int);
+#endif
 
 #ifdef DEBUG_SENSOR_TIME
 	do_gettimeofday(&end);
@@ -1141,6 +1267,7 @@ int sensor_gm2_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *
 {
 	int ret = 0;
 	int hold = 0;
+	int max_again = 0;
 	struct is_cis *cis;
 	struct i2c_client *client;
 
@@ -1165,13 +1292,18 @@ int sensor_gm2_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *
 		return -EINVAL;
 	}
 
+	if (cis->cis_data->sens_config_index_cur == SENSOR_GM2_REMOSAIC_FULL_8000x6000_10FPS)
+		max_again = 0x200; /* not support x32 again in full resolution */
+	else
+		max_again = cis->cis_data->max_analog_gain[0];
+
 	analog_gain = (u16)sensor_cis_calc_again_code(again->val);
 
 	if (analog_gain < cis->cis_data->min_analog_gain[0])
 		analog_gain = cis->cis_data->min_analog_gain[0];
 
-	if (analog_gain > cis->cis_data->max_analog_gain[0])
-		analog_gain = cis->cis_data->max_analog_gain[0];
+	if (analog_gain > max_again)
+		analog_gain = max_again;
 
 	dbg_sensor(1, "[MOD:D:%d] %s(vsync cnt = %d), input_again = %d us, analog_gain(%#x)\n",
 		cis->id, __func__, cis->cis_data->sen_vsync_count, again->val, analog_gain);
@@ -1338,7 +1470,7 @@ int sensor_gm2_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_agai
 	}
 
 	cis_data = cis->cis_data;
-	cis_data->max_analog_gain[0] = 0x200;
+	cis_data->max_analog_gain[0] = 0x400;
 	cis_data->max_analog_gain[1] = sensor_cis_calc_again_permile(cis_data->max_analog_gain[0]);
 
 	*max_again = cis_data->max_analog_gain[1];
@@ -1361,8 +1493,12 @@ int sensor_gm2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 	struct i2c_client *client;
 	cis_shared_data *cis_data;
 
+#ifdef USE_SENSOR_GM2_WDR
 	u16 long_gain = 0;
 	u16 short_gain = 0;
+#else
+	u16 dgain_code = 0;
+#endif
 	u16 dgains[4] = {0};
 
 #ifdef DEBUG_SENSOR_TIME
@@ -1387,6 +1523,7 @@ int sensor_gm2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 
 	cis_data = cis->cis_data;
 
+#ifdef USE_SENSOR_GM2_WDR
 	long_gain = (u16)sensor_cis_calc_dgain_code(dgain->long_val);
 	short_gain = (u16)sensor_cis_calc_dgain_code(dgain->short_val);
 
@@ -1406,6 +1543,22 @@ int sensor_gm2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 		cis->id, __func__, cis->cis_data->sen_vsync_count, dgain->long_val,
 		dgain->short_val, long_gain, short_gain);
 
+	dgains[0] = dgains[1] = dgains[2] = dgains[3] = short_gain;
+#else
+	dgain_code = (u16)sensor_cis_calc_dgain_code(dgain->val);
+
+	if (dgain_code < cis->cis_data->min_digital_gain[0])
+		dgain_code = cis->cis_data->min_digital_gain[0];
+
+	if (dgain_code > cis->cis_data->max_digital_gain[0])
+		dgain_code = cis->cis_data->max_digital_gain[0];
+
+	dbg_sensor(1, "[MOD:D:%d] %s(vsync cnt = %d), input_dgain = %d/%d us, dgain_code(%#x)\n",
+		cis->id, __func__, cis->cis_data->sen_vsync_count, dgain->long_val, dgain->short_val, dgain_code);
+
+	dgains[0] = dgains[1] = dgains[2] = dgains[3] = dgain_code;
+#endif
+
 	I2C_MUTEX_LOCK(cis->i2c_lock);
 
 	hold = sensor_gm2_cis_group_param_hold_func(subdev, 0x01);
@@ -1414,8 +1567,7 @@ int sensor_gm2_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 		goto p_err;
 	}
 
-	dgains[0] = dgains[1] = dgains[2] = dgains[3] = short_gain;
-	/* Short digital gain */
+	/* Short digital gain only & single exposure */
 	ret = is_sensor_write16_array(client, SENSOR_GM2_DIG_GAIN_ADDR, dgains, 4);
 	if (ret < 0)
 		goto p_err;

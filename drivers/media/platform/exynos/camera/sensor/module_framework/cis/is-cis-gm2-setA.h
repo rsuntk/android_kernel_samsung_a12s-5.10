@@ -18,22 +18,22 @@
 /*
  * [Mode Information]
  *
- * Reference File : S5KGM2SP_EVT0_Setfile_Ver1.4_190729.xlsx
- * Update Data    : 2019-07-30
+ * Reference File : S5KGM2SP_EVT0_Setfile_Ver2.4_200330.xlsx
+ * Update Data    : 2020-04-02
  * Author         : kmin.kim
  *
  * - Remosaic Full For Single Still Remosaic Capture -
- *    [  0 ] FULL : Remosaic Full 8000x6000 10fps       : Single Still Remosaic Capture (4:3)
+ *    [  0 ] FULL : Remosaic Full 8000x6000 10fps  2054Mbps     : Single Still Remosaic Capture (4:3)
  *
  * - 2x2 BIN For Still Preview / Capture -
- *    [  1 ] 2SUM2BIN : 2 Binning Full 4000x3000 30fps    : Single Still Preview/Capture (4:3)
- *    [  2 ] 2SUM2BIN : 2 Binning Crop 4000X2256 30fps    : Single Still Preview/Capture (16:9)
- *    [  3 ] 2SUM2BIN : 2 Binning Crop 4000X1844 30fps    : Single Still Preview/Capture (19.5:9)
- *    [  4 ] 2SUM2BIN : 2 Binning Crop 3680X3000 30fps    : MMS (11:9)
- *    [  5 ] 2SUM2BIN : 2 Binning Crop 3000X3000 30fps    : Single Still Preview/Capture (1:1)
- *    [  6 ] 4SUM4BIN : 4 Binning Full 2000X1500 94fps    : Fast-AE (2000x1500@94fps)
- *    [  7 ] 4SUM4BIN : 4 Binning Crop 2000X1128 120fps   : SlowMotion (1280x720@120fps)
- *    [  8 ] 4SUM4BIN : 4 Binning Crop 1920X1080 240fps   : SlowMotion (1280x720@240fps)
+ *    [  1 ] 2SUM2BIN : 2 Binning Full 4000x3000 30fps  1352MBps  : Single Still Preview/Capture (4:3)
+ *    [  2 ] 2SUM2BIN : 2 Binning Crop 4000X2256 30fps  1248MBps  : Single Still Preview/Capture (16:9)
+ *    [  3 ] 2SUM2BIN : 2 Binning Crop 4000X1844 30fps  1352MBps  : Single Still Preview/Capture (19.5:9)
+ *    [  4 ] 2SUM2BIN : 2 Binning Crop 3680X3000 30fps  1352MBps  : MMS (11:9)
+ *    [  5 ] 2SUM2BIN : 2 Binning Crop 3000X3000 30fps  1352MBps  : Single Still Preview/Capture (1:1)
+ *    [  6 ] 4SUM4BIN : 4 Binning Full 2000X1500 94fps  1352MBps  : Fast-AE (2000x1500@94fps)
+ *    [  7 ] 4SUM4BIN : 4 Binning Crop 2000X1128 120fps 1352MBps  : SlowMotion (1280x720@120fps)
+ *    [  8 ] 4SUM4BIN : 4 Binning Crop 1920X1080 240fps 2054Mbps  : SlowMotion (1280x720@240fps)
  *
  */
 
@@ -3044,7 +3044,7 @@ const u32 sensor_gm2_setfile_A_2X2BIN_CROP_4000x2256_30FPS[] = {
 	0x030A, 0x0001, 0x02,
 	0x030C, 0x0000, 0x02,
 	0x030E, 0x0004, 0x02,
-	0x0310, 0x0068, 0x02,
+	0x0310, 0x0060, 0x02,
 	0x0312, 0x0000, 0x02,
 	0x0702, 0x0000, 0x02,
 	0x0202, 0x0020, 0x02,
@@ -4089,6 +4089,14 @@ const struct sensor_pll_info_compact sensor_gm2_pllinfo_A_2X2BIN_30FPS = {
 	9984,                        /* line_length_pck */
 };
 
+const struct sensor_pll_info_compact sensor_gm2_pllinfo_A_2X2BIN_30FPS_Mipi_Datarate_1248 = {
+	EXT_CLK_Mhz * 1000 * 1000,   /* ext_clk */
+	1248000000,                  /* mipi_datarate = OPSYCK */
+	962000000,                   /* pclk = VTPXCK of Clock Information */
+	3210,                        /* frame_length_lines */
+	9984,                        /* line_length_pck */
+};
+
 const struct sensor_pll_info_compact sensor_gm2_pllinfo_A_4X4BIN_94FPS = {
 	EXT_CLK_Mhz * 1000 * 1000,   /* ext_clk */
 	1352000000,                  /* mipi_datarate = OPSYCK */
@@ -4140,7 +4148,7 @@ static const u32 sensor_gm2_setfile_A_sizes[] = {
 static const struct sensor_pll_info_compact *sensor_gm2_pllinfos_A[] = {
 	&sensor_gm2_pllinfo_A_REMOSAIC_FULL_10FPS,
 	&sensor_gm2_pllinfo_A_2X2BIN_30FPS,
-	&sensor_gm2_pllinfo_A_2X2BIN_30FPS,
+	&sensor_gm2_pllinfo_A_2X2BIN_30FPS_Mipi_Datarate_1248,
 	&sensor_gm2_pllinfo_A_2X2BIN_30FPS,
 	&sensor_gm2_pllinfo_A_2X2BIN_30FPS,
 	&sensor_gm2_pllinfo_A_2X2BIN_30FPS,

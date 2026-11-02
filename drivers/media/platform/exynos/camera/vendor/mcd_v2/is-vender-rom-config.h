@@ -21,7 +21,7 @@
 #include "is-vender-rom-config_aas_v51x.h"
 #else
 
-const struct is_vender_rom_addr *vender_rom_addr[SENSOR_POSITION_MAX] = {
+static const struct is_vender_rom_addr *vender_rom_addr[SENSOR_POSITION_MAX] = {
 	NULL,		//[0] SENSOR_POSITION_REAR
 	NULL,		//[1] SENSOR_POSITION_FRONT
 	NULL,		//[2] SENSOR_POSITION_REAR2
