@@ -27,8 +27,8 @@
 #include <device/mali_kbase_device.h>
 #include <mali_kbase_hwaccess_gpuprops.h>
 #include <mali_kbase_gpuprops_private_types.h>
-
 #include <mali_exynos_kbase_entrypoint.h>
+#include <hw_access/mali_kbase_hw_access_regmap_legacy.h>
 
 int kbase_backend_gpuprops_get(struct kbase_device *kbdev, struct kbasep_gpuprops_regdump *regdump)
 {
