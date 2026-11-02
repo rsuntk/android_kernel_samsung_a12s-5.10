@@ -109,5 +109,3 @@
 
 #endif /* IS_VENDOR_CONFIG_AAV_V14_H */
 
-#define CONFIG_LEDS_S2MU106_FLASH /* Flash config */
-
