@@ -361,6 +361,13 @@ config CAMERA_CIS_5E9_OBJ
 		help
 		  Use to build S5K5E9 camera sensor.
 
+config CAMERA_CIS_SR846_OBJ
+	tristate "Use SR846 camera cis"
+	depends on CAMERA_CIS_SELECT
+	default n
+	help
+	  Use to build SR846 camera sensor.
+
 config CAMERA_CIS_GC02M1_OBJ
 	tristate "Use GC02M1 camera cis"
 	depends on CAMERA_CIS_SELECT
