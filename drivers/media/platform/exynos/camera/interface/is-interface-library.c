@@ -2840,6 +2840,8 @@ int __nocfi is_load_rta_bin(int loadType)
 
 	os_system_func_t os_system_funcs[100];
 	ulong lib_rta = RTA_LIB_ADDR;
+	struct is_memory_attribute rta_memory_attribute = {
+		__pgprot(PTE_RDONLY), PFN_UP(LIB_RTA_CODE_SIZE), lib_rta};
 
 #if defined(ENABLE_DYNAMIC_HEAP_FOR_DDK_RTA)
 	struct is_core *core = (struct is_core *)dev_get_drvdata(device);
