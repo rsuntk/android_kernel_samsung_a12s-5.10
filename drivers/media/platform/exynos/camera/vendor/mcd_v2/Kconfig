@@ -82,9 +82,3 @@ config CAMERA_AAV_V14
         default n
         help
           This camera is aav_v14 project
-config CAMERA_XXT_V5
-        bool "This camera is xxt_v5 project"
-        depends on VENDER_MCD_V2
-        default n
-        help
-          This camera is xxt_v5 project.

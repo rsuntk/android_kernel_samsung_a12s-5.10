@@ -34,10 +34,6 @@
 #include <linux/sm5714.h>
 #endif
 
-#if defined(CONFIG_LEDS_S2MU106_FLASH)
-#include <linux/leds-s2mu106.h>
-#endif
-
 #include <linux/bsearch.h>
 #include "is-binary.h"
 
@@ -2194,9 +2190,6 @@ extern int s2mpb02_set_torch_current(enum s2mpb02_torch_mode torch_mode, unsigne
 #if IS_ENABLED(CONFIG_LEDS_SM5714)
 extern int32_t sm5714_fled_mode_ctrl(int state, uint32_t brightness);
 #endif
-#if defined(CONFIG_LEDS_S2MU106_FLASH)
-extern void s2mu106_set_torch_current(enum s2mu106_fled_mode state);
-#endif
 
 int is_vender_set_torch(struct camera2_shot *shot)
 {
@@ -2208,8 +2201,6 @@ int is_vender_set_torch(struct camera2_shot *shot)
 		lm3560_reg_update_export(0xE0, 0xFF, 0xEF);
 #elif defined(CONFIG_LEDS_SKY81296)
 		sky81296_torch_ctrl(1);
-#elif defined(CONFIG_LEDS_S2MU106_FLASH)
-		s2mu106_set_torch_current(S2MU106_FLED_MODE_MOVIE);
 #endif
 #if IS_ENABLED(CONFIG_LEDS_S2MPB02_FLASH)
 #if defined(LEDS_S2MPB02_ADAPTIVE_MOVIE_CURRENT)
@@ -2228,8 +2219,6 @@ int is_vender_set_torch(struct camera2_shot *shot)
 			info("is_vender_set_torch sm5714_fled_mode_ctrl:(%d)\n", aeflashMode);
 			sm5714_fled_mode_ctrl(SM5714_FLED_MODE_PRE_FLASH,0);
 		}
-#elif defined(CONFIG_LEDS_S2MU106_FLASH)
-		s2mu106_set_torch_current(S2MU106_FLED_MODE_TORCH);
 #endif
 
 #ifdef CONFIG_LEDS_LM3560

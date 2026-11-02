@@ -17,8 +17,11 @@
 #include "is-groupmgr.h"
 #include "is-interface.h"
 
+#if defined(CONFIG_EXYNOS_PM_QOS_MODULE)
 #include <soc/samsung/exynos_pm_qos.h>
-
+#else
+#include <linux/pm_qos.h>
+#endif
 
 #define RESOURCE_TYPE_SENSOR0	0
 #define RESOURCE_TYPE_SENSOR1	1

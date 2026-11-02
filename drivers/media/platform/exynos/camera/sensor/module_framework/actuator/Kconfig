@@ -109,6 +109,13 @@ config CAMERA_ACT_ZC569_OBJ
         help
           Use to build ZC569 driver.
 
+config CAMERA_ACT_GT9778_OBJ
+          tristate "Use actuator GT9778"
+          depends on CAMERA_ACT_SELECT
+          default n
+          help
+            Use to build GT9778 driver.
+
 config CAMERA_ACT_FP5529_OBJ
         bool "Use actuator FP5529"
 	depends on CAMERA_ACT_SELECT

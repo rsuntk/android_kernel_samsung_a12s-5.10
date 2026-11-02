@@ -374,6 +374,7 @@ struct sc_frame {
 
 	struct sc_addr			addr;
 	__u32			bytesused[SC_MAX_PLANES];
+	__u32			min_length[SC_MAX_PLANES];
 	__u8			byte32num;
 	bool			pre_multi;
 };

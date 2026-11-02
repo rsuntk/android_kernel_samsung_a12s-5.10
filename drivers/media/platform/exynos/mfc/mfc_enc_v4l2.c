@@ -2071,6 +2071,9 @@ static int __mfc_enc_set_param(struct mfc_ctx *ctx, struct v4l2_control *ctrl)
 	case V4L2_CID_MPEG_VIDEO_MIN_QUALITY:
 		p->min_quality_mode = ctrl->value;
 		break;
+	case V4L2_CID_MPEG_MFC_MULTI_VIEW_ENABLE:
+		ctx->multi_view_enable = ctrl->value;
+		break;
 	/* These are stored in specific variables */
 	case V4L2_CID_MPEG_VIDEO_HEVC_HIERARCHICAL_CODING_LAYER_CH:
 	case V4L2_CID_MPEG_VIDEO_VP9_HIERARCHICAL_CODING_LAYER_CH:

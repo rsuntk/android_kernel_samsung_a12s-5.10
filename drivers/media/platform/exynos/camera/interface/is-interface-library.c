@@ -170,7 +170,7 @@ static inline void add_alloc_track(int type, ulong addr, size_t size)
 
 	spin_lock_irqsave(&lib->slock_mem_track, flag);
 	if ((!lib->cur_tracks)
-		|| (lib->cur_tracks && (lib->cur_tracks->num_of_track == MEM_TRACK_COUNT))) {
+	    || (lib->cur_tracks && (lib->cur_tracks->num_of_track == MEM_TRACK_COUNT))) {
 		err_lib("exceed memory track");
 		spin_unlock_irqrestore(&lib->slock_mem_track, flag);
 		return;
@@ -1775,9 +1775,6 @@ int is_init_ddk_thread(void)
 	struct sched_param param = { .sched_priority = IS_MAX_PRIO - 1 };
 	char name[30];
 	int i, j, ret = 0;
-#ifdef SET_CPU_AFFINITY
-	u32 cpu = 0;
-#endif
 
 	struct is_lib_support *lib = &gPtr_lib_support;
 
@@ -1812,16 +1809,43 @@ int is_init_ddk_thread(void)
 					lib_task_work);
 		}
 
-		if (i != TASK_RTA) {
-#ifdef SET_CPU_AFFINITY
-			cpu = lib_get_task_affinity(i);
-			ret = set_cpus_allowed_ptr(lib->task_taaisp[i].task, cpumask_of(cpu));
-			dbg_lib(3, "%s: task(%d) affinity cpu(%d) (%d)\n", __func__, i, cpu, ret);
-#endif
-		}
 	}
 
 	return ret;
+}
+
+void is_set_ddk_thread_affinity(void)
+{
+	struct is_lib_support *lib = &gPtr_lib_support;
+	struct is_core *core;
+	struct task_struct *task;
+	int i;
+	const char *cpus;
+
+	core = (struct is_core *)platform_get_drvdata(lib->pdev);
+	cpus = core->resourcemgr.dvfs_ctrl.cur_cpus;
+
+	for (i = 0 ; i < TASK_INDEX_MAX; i++) {
+		if (i == TASK_RTA)
+			continue;
+
+		task = lib->task_taaisp[i].task;
+
+		if (!cpus) {
+			/* Legacy mode */
+			u32 cpu = lib_get_task_affinity(i);
+
+			set_cpus_allowed_ptr(task, cpumask_of(cpu));
+			dbg_lib(3, "lib_%d_worker: affinity %d\n", i, cpu);
+		} else {
+			/* DT mode */
+			struct cpumask cpumask;
+
+			cpulist_parse(cpus, &cpumask);
+			set_cpus_allowed_ptr(task, &cpumask);
+			dbg_lib(3, "lib_%d_worker: affinity %s\n", i, cpus);
+		}
+	}
 }
 
 void is_flush_ddk_thread(void)
@@ -2523,6 +2547,10 @@ int __nocfi is_load_ddk_bin(int loadType)
 	/* fixup the memory attribute for every region */
 	ulong lib_addr;
 	size_t bin_size;
+#ifdef CONFIG_UH_RKP
+	rkp_dynamic_load_t rkp_dyn;
+	static rkp_dynamic_load_t rkp_dyn_before = {0};
+#endif
 	ulong lib_isp = DDK_LIB_ADDR;
 
 #ifdef USE_ONE_BINARY
@@ -2573,8 +2601,6 @@ int __nocfi is_load_ddk_bin(int loadType)
 #endif
 #endif
 
-	info_lib("lib_addr : 0x%lx\n", lib_addr);
-
 	if (loadType == BINARY_LOAD_ALL) {
 #ifndef CONFIG_DISABLE_CAMERA_MEM_ATTR
 		ret = is_memory_attribute_nxrw(&memory_attribute[INDEX_ISP_BIN]);
@@ -2597,7 +2623,7 @@ int __nocfi is_load_ddk_bin(int loadType)
 		if (bin.size <= bin_size) {
 			memcpy((void *)lib_addr, bin.data, bin.size);
 #if !defined(MODULE)
-			//__flush_dcache_area((void *)lib_addr, bin.size);
+			__flush_dcache_area((void *)lib_addr, bin.size);
 #endif
 		} else {
 			err_lib("DDK bin size is bigger than memory area. %zd[%zd]",
@@ -2629,8 +2655,8 @@ int __nocfi is_load_ddk_bin(int loadType)
 				bin.data + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
 				CAMERA_BINARY_VRA_DATA_SIZE);
 #if !defined(MODULE)
-		//	__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
-		//						CAMERA_BINARY_VRA_DATA_SIZE);
+			__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
+								CAMERA_BINARY_VRA_DATA_SIZE);
 #endif
 			info_lib("binary info 3[%s] - type: D, from: %s\n",
 				bin_type,
@@ -2639,8 +2665,8 @@ int __nocfi is_load_ddk_bin(int loadType)
 				bin.data + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
 				(bin.size - CAMERA_BINARY_DDK_DATA_OFFSET - CDH_SIZE));
 #if !defined(MODULE)
-			//__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
-			//					bin.size - CAMERA_BINARY_DDK_DATA_OFFSET - CDH_SIZE);
+			__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
+								bin.size - CAMERA_BINARY_DDK_DATA_OFFSET - CDH_SIZE);
 #endif
 		} else {
 			err_lib("DDK bin size is bigger than memory area. %zd[%zd]",
@@ -2740,7 +2766,7 @@ int __nocfi is_load_vra_bin(int loadType)
 		goto fail;
 	}
 #if !defined(MODULE)
-//	__flush_dcache_area((void *)lib_vra, bin.size);
+	__flush_dcache_area((void *)lib_vra, bin.size);
 #endif
 	flush_icache_range(lib_vra, bin.size);
 
@@ -2796,12 +2822,19 @@ int __nocfi is_load_rta_bin(int loadType)
 	}
 
 	if (loadType == BINARY_LOAD_ALL) {
+#ifndef CONFIG_DISABLE_CAMERA_MEM_ATTR
+		ret = is_memory_attribute_nxrw(&rta_memory_attribute);
+		if (ret) {
+			err_lib("failed to change into NX memory attribute (%d)", ret);
+			return ret;
+		}
+#endif
 		info_lib("binary info[RTA] - type: C/D, from: %s\n",
 			was_loaded_by(&bin) ? "built-in" : "user-provided");
 		if (bin.size <= RTA_LIB_SIZE) {
 			memcpy((void *)lib_rta, bin.data, bin.size);
 #if !defined(MODULE)
-			//__flush_dcache_area((void *)lib_rta, bin.size);
+			__flush_dcache_area((void *)lib_rta, bin.size);
 #endif
 		} else {
 			err_lib("RTA bin size is bigger than memory area. %d[%d]",
@@ -2809,6 +2842,13 @@ int __nocfi is_load_rta_bin(int loadType)
 			ret = -EBADF;
 			goto fail;
 		}
+#ifndef CONFIG_DISABLE_CAMERA_MEM_ATTR
+		ret = is_memory_attribute_rox(&rta_memory_attribute);
+		if (ret) {
+			err_lib("failed to change into EX memory attribute (%d)", ret);
+			return ret;
+		}
+#endif
 
 	} else { /* loadType == BINARY_LOAD_DATA */
 		if ((bin.size > CAMERA_BINARY_RTA_DATA_OFFSET) && (bin.size <= RTA_LIB_SIZE)) {
@@ -2818,8 +2858,8 @@ int __nocfi is_load_rta_bin(int loadType)
 				bin.data + CAMERA_BINARY_RTA_DATA_OFFSET,
 				bin.size - CAMERA_BINARY_RTA_DATA_OFFSET);
 #if !defined(MODULE)
-			//__flush_dcache_area((void *)lib_rta + CAMERA_BINARY_RTA_DATA_OFFSET,
-			//					bin.size - CAMERA_BINARY_RTA_DATA_OFFSET);
+			__flush_dcache_area((void *)lib_rta + CAMERA_BINARY_RTA_DATA_OFFSET,
+								bin.size - CAMERA_BINARY_RTA_DATA_OFFSET);
 #endif
 		} else {
 			err_lib("RTA bin size is bigger than memory area. %d[%d]",

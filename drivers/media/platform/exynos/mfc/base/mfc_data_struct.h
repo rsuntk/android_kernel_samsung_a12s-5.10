@@ -2507,6 +2507,7 @@ struct mfc_ctx {
 	spinlock_t		meminfo_queue_lock;
 	struct mfc_meminfo	meminfo[MFC_MEMINFO_MAX_NUM];
 	size_t			meminfo_size[MFC_MEMINFO_CTX_MAX + 1];
+	u32 multi_view_enable;
 };
 
 struct mfc_core_ctx {

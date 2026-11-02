@@ -1412,6 +1412,91 @@ static int sc_calc_fmt_ayv12_planesize(const u32 fmt, const __u32 y_stride,
 	return 0;
 }
 
+static void sc_calc_planesize(struct sc_frame *frame, unsigned int pixsize)
+{
+	int idx = frame->sc_fmt->num_planes;
+
+	while (idx-- > 0)
+		frame->addr.size[idx] =
+			(pixsize * frame->sc_fmt->bitperpixel[idx]) / 8;
+}
+
+static void sc_calc_bufsize(struct sc_dev *sc, struct sc_frame *frame)
+{
+	unsigned int pixsize, bytesize;
+	unsigned int ext_size = 0, i;
+	u32 min_size = sc->variant->minsize_srcplane;
+
+	pixsize = frame->width * frame->height;
+	bytesize = (pixsize * frame->sc_fmt->bitperpixel[0]) >> 3;
+
+	frame->addr.size[SC_PLANE_CB] = 0;
+	frame->addr.size[SC_PLANE_CR] = 0;
+
+	if (sc->variant->extra_buf)
+		ext_size = sc_ext_buf_size(frame->width);
+
+	switch (frame->sc_fmt->num_comp) {
+	case 1:
+		frame->addr.size[SC_PLANE_Y] = bytesize;
+		break;
+	case 2:
+		if (sc_fmt_is_s10bit_yuv(frame->sc_fmt->pixelformat) ||
+				sc_fmt_is_sbwc(frame->sc_fmt->pixelformat)) {
+			sc_calc_s10b_planesize(frame->sc_fmt->pixelformat,
+					frame->width, frame->height,
+					&frame->addr.size[SC_PLANE_Y],
+					&frame->addr.size[SC_PLANE_CB],
+					false, frame->byte32num);
+		} else if (frame->sc_fmt->pixelformat == V4L2_PIX_FMT_NV12N) {
+			unsigned int w = frame->width;
+			unsigned int h = frame->height;
+
+			frame->addr.size[SC_PLANE_Y] = NV12N_Y_SIZE(w, h);
+			frame->addr.size[SC_PLANE_CB] = NV12N_CBCR_SIZE(w, h);
+		} else if (frame->sc_fmt->num_planes == 1) {
+			if (frame->sc_fmt->pixelformat == V4L2_PIX_FMT_NV12_P010)
+				pixsize *= 2;
+			frame->addr.size[SC_PLANE_Y] = pixsize;
+			frame->addr.size[SC_PLANE_CB] = bytesize - pixsize;
+		} else if (frame->sc_fmt->num_planes == 2) {
+			sc_calc_planesize(frame, pixsize);
+		}
+		break;
+	case 3:
+		if (sc_fmt_is_ayv12(frame->sc_fmt->pixelformat)) {
+			sc_calc_fmt_ayv12_planesize(frame->sc_fmt->pixelformat,
+						frame->stride[0], frame->stride[1],
+						frame->height,
+						&frame->addr.size[SC_PLANE_Y],
+						&frame->addr.size[SC_PLANE_CB],
+						&frame->addr.size[SC_PLANE_CR]);
+		} else if (frame->sc_fmt->num_planes == 1) {
+			frame->addr.size[SC_PLANE_Y] = pixsize;
+			frame->addr.size[SC_PLANE_CB] =
+						(bytesize - pixsize) / 2;
+			frame->addr.size[SC_PLANE_CR] =
+						frame->addr.size[SC_PLANE_CB];
+		} else if (frame->sc_fmt->num_planes == 3) {
+			sc_calc_planesize(frame, pixsize);
+		} else {
+			dev_err(sc->dev, "Please check the num of comp\n");
+		}
+
+		break;
+	default:
+		break;
+	}
+
+	for (i = 0; ext_size && i < frame->sc_fmt->num_comp; i++)
+		frame->addr.size[i] += (i == 0) ? ext_size : ext_size/2;
+
+	for (i = 0; i < frame->sc_fmt->num_comp; i++) {
+		if (frame->addr.size[i] < min_size)
+			frame->addr.size[i] = min_size;
+	}
+}
+
 static inline int sc_get_sbwc_span_bytes(const struct sc_fmt *fmt,
 					int width, unsigned short ratio)
 {
@@ -1658,6 +1743,23 @@ static int sc_v4l2_s_fmt_mplane(struct file *file, void *fh,
 		for (i = 0; i < frame->sc_fmt->num_comp; i++)
 			frame->stride[i] = stride[i];
 	}
+
+	sc_calc_bufsize(ctx->sc_dev, frame);
+
+	if (frame->sc_fmt->num_planes == 1 && frame->sc_fmt->num_comp != 1) {
+		pixm->plane_fmt[0].bytesperline = frame->stride[0];
+		pixm->plane_fmt[0].sizeimage = 0;
+		for (i = 0; i < frame->sc_fmt->num_comp; ++i)
+			pixm->plane_fmt[0].sizeimage += frame->addr.size[i];
+	} else {
+		for (i = 0; i < pixm->num_planes; ++i) {
+			pixm->plane_fmt[i].bytesperline = frame->stride[i];
+			pixm->plane_fmt[i].sizeimage = frame->addr.size[i];
+		}
+	}
+
+	for (i = 0; i < frame->sc_fmt->num_planes; i++)
+		frame->min_length[i] = pixm->plane_fmt[i].sizeimage;
 
 	return 0;
 }
@@ -2281,86 +2383,6 @@ static int sc_ctx_stop_req(struct sc_ctx *ctx)
 	return ret;
 }
 
-static void sc_calc_planesize(struct sc_frame *frame, unsigned int pixsize)
-{
-	int idx = frame->sc_fmt->num_planes;
-
-	while (idx-- > 0)
-		frame->addr.size[idx] =
-			(pixsize * frame->sc_fmt->bitperpixel[idx]) / 8;
-}
-
-static void sc_calc_intbufsize(struct sc_dev *sc, struct sc_int_frame *int_frame)
-{
-	struct sc_frame *frame = &int_frame->frame;
-	unsigned int pixsize, bytesize;
-	unsigned int ext_size = 0, i;
-	u32 min_size = sc->variant->minsize_srcplane;
-
-	pixsize = frame->width * frame->height;
-	bytesize = (pixsize * frame->sc_fmt->bitperpixel[0]) >> 3;
-
-	if (sc->variant->extra_buf)
-		ext_size = sc_ext_buf_size(frame->width);
-
-	switch (frame->sc_fmt->num_comp) {
-	case 1:
-		frame->addr.size[SC_PLANE_Y] = bytesize;
-		break;
-	case 2:
-		if (sc_fmt_is_s10bit_yuv(frame->sc_fmt->pixelformat) ||
-				sc_fmt_is_sbwc(frame->sc_fmt->pixelformat)) {
-			sc_calc_s10b_planesize(frame->sc_fmt->pixelformat,
-					frame->width, frame->height,
-					&frame->addr.size[SC_PLANE_Y],
-					&frame->addr.size[SC_PLANE_CB],
-					false, frame->byte32num);
-		} else if (frame->sc_fmt->num_planes == 1) {
-			if (frame->sc_fmt->pixelformat == V4L2_PIX_FMT_NV12_P010)
-				pixsize *= 2;
-			frame->addr.size[SC_PLANE_Y] = pixsize;
-			frame->addr.size[SC_PLANE_CB] = bytesize - pixsize;
-		} else if (frame->sc_fmt->num_planes == 2) {
-			sc_calc_planesize(frame, pixsize);
-		}
-		break;
-	case 3:
-		if (sc_fmt_is_ayv12(frame->sc_fmt->pixelformat)) {
-			sc_calc_fmt_ayv12_planesize(frame->sc_fmt->pixelformat,
-						frame->stride[0], frame->stride[1],
-						frame->height,
-						&frame->addr.size[SC_PLANE_Y],
-						&frame->addr.size[SC_PLANE_CB],
-						&frame->addr.size[SC_PLANE_CR]);
-		} else if (frame->sc_fmt->num_planes == 1) {
-			frame->addr.size[SC_PLANE_Y] = pixsize;
-			frame->addr.size[SC_PLANE_CB] =
-						(bytesize - pixsize) / 2;
-			frame->addr.size[SC_PLANE_CR] =
-						frame->addr.size[SC_PLANE_CB];
-		} else if (frame->sc_fmt->num_planes == 3) {
-			sc_calc_planesize(frame, pixsize);
-		} else {
-			dev_err(sc->dev, "Please check the num of comp\n");
-		}
-
-		break;
-	default:
-		break;
-	}
-
-	for (i = 0; ext_size && i < frame->sc_fmt->num_comp; i++)
-		frame->addr.size[i] += (i == 0) ? ext_size : ext_size/2;
-
-	for (i = 0; i < frame->sc_fmt->num_comp; i++) {
-		if (frame->addr.size[i] < min_size)
-			frame->addr.size[i] = min_size;
-	}
-
-	memcpy(&int_frame->src_addr.size, &frame->addr.size, sizeof(int_frame->src_addr.size));
-	memcpy(&int_frame->dst_addr.size, &frame->addr.size, sizeof(int_frame->dst_addr.size));
-}
-
 static void free_intermediate_frame(struct sc_ctx *ctx)
 {
 	int i;
@@ -2490,7 +2512,7 @@ static bool initialize_initermediate_frame(struct sc_ctx *ctx)
 			return false;
 	}
 
-	sc_calc_intbufsize(sc, ctx->i_frame);
+	sc_calc_bufsize(sc, &ctx->i_frame->frame);
 
 	for (i = 0; i < SC_MAX_PLANES; i++) {
 		if (!frame->addr.size[i])
@@ -2920,7 +2942,7 @@ static int sc_vb2_queue_setup(struct vb2_queue *vq,
 	/* Get number of planes from format_list in driver */
 	*num_planes = frame->sc_fmt->num_planes;
 	for (i = 0; i < frame->sc_fmt->num_planes; i++) {
-		sizes[i] = frame->bytesused[i];
+		sizes[i] = frame->min_length[i];
 		alloc_devs[i] = ctx->sc_dev->dev;
 	}
 

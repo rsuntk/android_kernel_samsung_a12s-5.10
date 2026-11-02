@@ -3688,71 +3688,6 @@ p_skip:
 	return ret;
 }
 
-static int is_sensor_wait_asyncshot(struct is_device_sensor *device)
-{
-   int ret = 0;
-   u32 retry = 30000;
-   struct is_group *group_leader;
-   struct is_framemgr *framemgr;
-   struct is_frame *frame;
-   unsigned long flags;
-   struct is_group_task *gtask;
-   u32 scount, init_shots, qcount;
-
-   group_leader = &(device->group_sensor);
-   gtask = &(device->groupmgr->gtask[group_leader->id]);
-   init_shots = group_leader->init_shots;
-   scount = atomic_read(&group_leader->scount);
-
-   framemgr = GET_HEAD_GROUP_FRAMEMGR(group_leader);
-   if (!framemgr) {
-       merr("leader framemgr is NULL", device);
-       ret = -EINVAL;
-       goto p_err;
-   }
-
-   qcount = framemgr->queued_count[FS_REQUEST] + framemgr->queued_count[FS_PROCESS];
-
-   if (init_shots) {
-       /* 3ax  group should be started */
-       if (!test_bit(IS_GROUP_START, &group_leader->state)) {
-           merr("stream leader is NOT started", device);
-           ret = -EINVAL;
-           goto p_err;
-       }
-
-       while (--retry && (scount < init_shots)) {
-           udelay(100);
-           scount = atomic_read(&group_leader->scount);
-       }
-   }
-
-   /*
-    * If batch(FRO) mode is used,
-    * asyn shot count doesn't have to bigger than MIN_OF_ASYNC_SHOTS(=1),
-    * because it will be operated like 60 fps.
-    */
-   framemgr_e_barrier_irqs(framemgr, 0, flags);
-   frame = peek_frame(framemgr, FS_PROCESS);
-   framemgr_x_barrier_irqr(framemgr, 0, flags);
-   if (frame && frame->num_buffers <= 1) {
-       /* trigger one more asyn_shots */
-       if (is_sensor_g_fast_mode(device) == 1) {
-           group_leader->asyn_shots += 1;
-           group_leader->skip_shots = group_leader->asyn_shots;
-           atomic_inc(&group_leader->smp_shot_count);
-           up(&group_leader->smp_trigger);
-           up(&gtask->smp_resource);
-       }
-   }
-
-   minfo("[ISC:D] stream on %s ready(scnt: %d, qcnt: %d, init: %d, asyn: %d, skip: %d)\n",
-       device, retry ? "OK" : "NOT", scount, qcount, init_shots,
-       group_leader->asyn_shots, group_leader->skip_shots);
-p_err:
-   return ret;
-}
-
 int is_sensor_front_start(struct is_device_sensor *device,
 	u32 instant_cnt,
 	u32 nonblock)
@@ -3804,12 +3739,6 @@ int is_sensor_front_start(struct is_device_sensor *device,
 	ret = v4l2_subdev_call(device->subdev_module, core, ioctl, V4L2_CID_SENSOR_NOTIFY_ACTUATOR_INIT, 0);
 	if (ret)
 		mwarn("Actuator init fail after first init done\n", device);
-
-    ret = is_sensor_wait_asyncshot(device);
-    if (ret) {
-        merr("asyncshot is fail(%d)", device, ret);
-        goto p_err;
-    }
 
 	ret = v4l2_subdev_call(subdev_csi, video, s_stream, IS_ENABLE_STREAM);
 	if (ret) {

@@ -667,12 +667,12 @@ void is_sensor_flash_fire_work(struct work_struct *data)
 				ret = is_sensor_flash_fire(sensor_peri, flash->flash_data.intensity);
 				if (ret) {
 					err("failed to turn off flash at flash expired handler\n");
+				}
 #ifdef CONFIG_LEDS_S2MU106_FLASH
 					pdo_ctrl_by_flash(0);
 					muic_afc_request_voltage(FLED, 9);
 					info("[%s](%d) MAIN Flash OFF: Power Down set Clear(5V -> 9V).\n" ,__func__,__LINE__);
 #endif
-				}
 			} else {
 				flash->flash_ae.main_fls_ae_reset = false;
 				flash->flash_ae.main_fls_strm_on_off_step = 0;
@@ -3007,17 +3007,6 @@ int is_sensor_peri_actuator_softlanding(struct is_device_sensor_peri *device)
 		soft_landing_table->step_delay = 200;
 		soft_landing_table->hw_table[0] = 0;
 	}
-#ifdef USE_CAMERA_ACT_DRIVER_SOFT_LANDING
-	v4l2_ctrl.id = V4L2_CID_ACTUATOR_SOFT_LANDING;
-	ret = v4l2_subdev_call(device->subdev_actuator, core, ioctl, SENSOR_IOCTL_ACT_S_CTRL, &v4l2_ctrl);
-
-	if(ret != HW_SOFTLANDING_FAIL){
-		if(ret)
-			err("[SEN:%d] v4l2_subdev_call(s_ctrl, id:%d) is fail(%d)",
-					actuator->id, v4l2_ctrl.id, ret);
-		return ret;
-	}
-#endif
 
 	ret = is_sensor_peri_actuator_check_move_done(device);
 	if (ret) {

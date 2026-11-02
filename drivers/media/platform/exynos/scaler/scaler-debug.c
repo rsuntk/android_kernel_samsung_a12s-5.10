@@ -10,8 +10,10 @@
 */
 
 #include "scaler.h"
-#include <trace/events/systrace.h>
-#define DECON_TRACE_BUF_SIZE    40
+
+#define CREATE_TRACE_POINTS
+#include "mscl_trace.h"
+
 static void show_crop(struct v4l2_rect *rect)
 {
 	pr_info("   - crop: L,T,W,H: %d, %d, %d, %d\n",
@@ -62,7 +64,6 @@ void sc_ctx_dump(struct sc_ctx *ctx)
 void sc_tracing_mark_write(struct sc_ctx *ctx, char trace_id, const char *str,
 			   int en)
 {
-	char buf[DECON_TRACE_BUF_SIZE] = {0,};
 	if (!ctx->pid)
 		return;
 
@@ -71,7 +72,6 @@ void sc_tracing_mark_write(struct sc_ctx *ctx, char trace_id, const char *str,
 			"%c is invalid arg for systrace\n", trace_id);
 		return;
 	}
-        snprintf(buf, DECON_TRACE_BUF_SIZE, "B|%c|%d|%s|%d",
-                                trace_id, ctx->pid, str, en);
-	trace_tracing_mark_write(buf);
+
+	trace_tracing_mark_write(trace_id, ctx->pid, str, en);
 }

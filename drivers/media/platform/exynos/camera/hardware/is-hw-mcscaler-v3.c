@@ -213,7 +213,7 @@ static int is_hw_mcsc_open(struct is_hw_ip *hw_ip, u32 instance,
 	if (test_bit(HW_OPEN, &hw_ip->state))
 		return 0;
 
-	frame_manager_probe(hw_ip->framemgr, BIT(hw_ip->id), "HWMCS");
+	frame_manager_probe(hw_ip->framemgr, hw_ip->id, "HWMCS");
 	frame_manager_open(hw_ip->framemgr, IS_MAX_HW_FRAME);
 
 	hw_ip->priv_info = vzalloc(sizeof(struct is_hw_mcsc));
@@ -708,7 +708,7 @@ static void is_hw_mcsc_wdma_cfg(struct is_hw_ip *hw_ip, struct is_frame *frame)
 					wdma_addr[out_id][i] = wdma_base[idx] ?
 						wdma_base[idx] : wdma_base[i];
 #ifdef USE_MCSC_STRIP_OUT_CROP
-						wdma_addr[out_id][i] += stripe_dma_offset;
+					wdma_addr[out_id][i] += stripe_dma_offset;
 #endif
 					wdma_addr[out_id][i] += offset;
 					dbg_hw(2, "M%dP(i:%d)(A:0x%X)\n", out_id, idx, wdma_addr[out_id][i]);
@@ -1181,55 +1181,20 @@ static int is_hw_mcsc_delete_setfile(struct is_hw_ip *hw_ip, u32 instance,
 	return 0;
 }
 
-int hw_mcsc_chk_frame_done(struct is_hw_ip *hw_ip,
-	u32 out_id, u32 *wq_id, u32 *out_f_id)
-{
-	switch (out_id) {
-	case MCSC_OUTPUT0:
-		*wq_id = WORK_M0P_FDONE;
-		*out_f_id = ENTRY_M0P;
-		break;
-	case MCSC_OUTPUT1:
-		*wq_id = WORK_M1P_FDONE;
-		*out_f_id = ENTRY_M1P;
-		break;
-	case MCSC_OUTPUT2:
-		*wq_id = WORK_M2P_FDONE;
-		*out_f_id = ENTRY_M2P;
-		break;
-	case MCSC_OUTPUT3:
-		*wq_id = WORK_M3P_FDONE;
-		*out_f_id = ENTRY_M3P;
-		break;
-	case MCSC_OUTPUT4:
-		*wq_id = WORK_M4P_FDONE;
-		*out_f_id = ENTRY_M4P;
-		break;
-	case MCSC_OUTPUT5:
-		*wq_id = WORK_M5P_FDONE;
-		*out_f_id = ENTRY_M5P;
-		break;
-	default:
-		swarn_hw("invalid output_id(%d)\n", hw_ip, out_id);
-		return -1;
-	}
-
-	return 0;
-}
-
 void is_hw_mcsc_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame,
 	int done_type)
 {
-	int ret = 0;
 	struct is_framemgr *framemgr;
 	struct is_frame *hw_frame;
 	struct is_hw_mcsc *hw_mcsc;
 	struct is_hw_mcsc_cap *cap = GET_MCSC_HW_CAP(hw_ip);
-	u32 index, out_id;
-	u32 wq_id = WORK_MAX_MAP, out_f_id = ENTRY_END;
+	u32 index;
 	int instance = atomic_read(&hw_ip->instance);
 	bool flag_get_meta = true;
 	ulong flags = 0;
+	int output_id;
+	struct is_group *group;
+	struct is_subdev *subdev;
 
 	FIMC_BUG_VOID(!hw_ip->priv_info);
 	FIMC_BUG_VOID(!cap);
@@ -1276,18 +1241,31 @@ void is_hw_mcsc_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame,
 	msdbgs_hw(2, "frame done[F:%d][O:0x%lx]\n", instance, hw_ip,
 		hw_frame->fcount, hw_frame->out_flag);
 
-	for (out_id = MCSC_OUTPUT0; out_id < cap->max_output; out_id++) {
-		ret = hw_mcsc_chk_frame_done(hw_ip, out_id, &wq_id, &out_f_id);
-		if (ret)
+	group = hw_ip->group[instance];
+	if (!group) {
+		mserr_hw("group is null", instance, hw_ip);
+		return;
+	}
+
+	list_for_each_entry(subdev, &group->subdev_list, list) {
+		if(subdev->id == ENTRY_MCS)
 			continue;
 
-		if (test_bit(out_f_id, &hw_frame->out_flag)) {
-			ret = is_hardware_frame_done(hw_ip, frame,
-					wq_id, out_f_id, done_type, flag_get_meta);
-			clear_bit(out_id, &mcsc_out_st);
-			flag_get_meta = false;
-		}
+		if (test_bit(subdev->id, &hw_frame->out_flag))
+			clear_bit(subdev->id - ENTRY_M0P + MCSC_OUTPUT0, &mcsc_out_st);
 	}
+
+	if (test_bit(hw_ip->id, &hw_frame->core_flag)) {
+		output_id = IS_HW_CORE_END;
+	} else {
+		output_id = 0;
+		atomic_inc(&hw_ip->count.dma);
+	}
+
+	if (done_type != IS_SHOT_SUCCESS)
+		flag_get_meta = false;
+
+	is_hardware_frame_done(hw_ip, frame, -1, output_id, done_type, flag_get_meta);
 
 	_is_hw_frame_dbg_trace(hw_ip, hw_frame->fcount, DEBUG_POINT_FRAME_END);
 
@@ -1295,13 +1273,6 @@ void is_hw_mcsc_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame,
 	dbg_isr_hw("[F:%d][S-E] %05llu us\n", hw_ip, atomic_read(&hw_ip->fcount),
 		(hw_ip->debug_info[index].time[DEBUG_POINT_FRAME_END] -
 		hw_ip->debug_info[index].time[DEBUG_POINT_FRAME_START]) / 1000);
-
-	if (!flag_get_meta)
-		atomic_inc(&hw_ip->count.dma);
-
-	if (flag_get_meta && done_type == IS_SHOT_SUCCESS)
-		is_hardware_frame_done(hw_ip, NULL, -1, IS_HW_CORE_END,
-				IS_SHOT_SUCCESS, flag_get_meta);
 }
 
 static int is_hw_mcsc_frame_ndone(struct is_hw_ip *hw_ip, struct is_frame *frame,
@@ -1310,10 +1281,6 @@ static int is_hw_mcsc_frame_ndone(struct is_hw_ip *hw_ip, struct is_frame *frame
 	int ret = 0;
 
 	is_hw_mcsc_frame_done(hw_ip, frame, done_type);
-
-	if (test_bit_variables(hw_ip->id, &frame->core_flag))
-		ret = is_hardware_frame_done(hw_ip, frame, -1, IS_HW_CORE_END,
-				done_type, false);
 
 	return ret;
 }
@@ -2214,7 +2181,7 @@ int is_hw_mcsc_hwfc_output(struct is_hw_ip *hw_ip, struct param_mcs_output *outp
 
 	if (output->hwfc)
 		is_scaler_set_hwfc_config(hw_ip->regs[REG_SETA], output_id, format, plane,
-			(output_id * HWFC_DMA_PLANE_OFFSET), width, height);
+			(output_id * HWFC_DMA_ID_OFFSET), width, height);
 
 	return ret;
 }

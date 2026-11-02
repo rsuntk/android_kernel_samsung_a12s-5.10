@@ -45,7 +45,6 @@
 	(((value) >> ((IP_OFFSET) + (CTRL_OFFSET))) & 0x1)
 
 #define GET_CORE_NUM(id)	((id) - DEV_HW_MCSC0)
-#define HWFC_DMA_PLANE_OFFSET	7
 
 enum mcsc_img_format {
 	MCSC_YUV422_1P_YUYV = 0,

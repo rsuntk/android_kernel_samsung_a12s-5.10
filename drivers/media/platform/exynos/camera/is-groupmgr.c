@@ -2676,7 +2676,7 @@ int is_group_buffer_queue(struct is_groupmgr *groupmgr,
 				next = next->next;
 			}
 
-			frame->stripe_info.region_num = DIV_ROUND_UP(max_width - STRIPE_MARGIN_WIDTH * 2,
+			frame->stripe_info.region_num = DIV_ROUND_UP(max_width,
 					ALIGN_DOWN(min_const_width - STRIPE_MARGIN_WIDTH * 2, STRIPE_MARGIN_WIDTH));
 		}
 

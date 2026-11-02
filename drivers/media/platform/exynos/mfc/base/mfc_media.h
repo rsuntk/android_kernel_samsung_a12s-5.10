@@ -549,5 +549,7 @@ enum v4l2_mpeg_mfc51_video_frame_type {
 					(V4L2_CID_MPEG_MFC_BASE + 251)
 #define V4L2_CID_MPEG_VIDEO_BPG_HEADER_SIZE			\
 					(V4L2_CID_MPEG_MFC_BASE + 252)
+#define V4L2_CID_MPEG_MFC_MULTI_VIEW_ENABLE	\
+					(V4L2_CID_MPEG_MFC_BASE + 272)
 
 #endif /* __MFC_MEDIA_H */

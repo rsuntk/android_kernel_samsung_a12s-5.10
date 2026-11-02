@@ -964,7 +964,9 @@ void is_debug_s2d(bool en_s2d, const char *fmt, ...)
 	if (en_s2d || debug_s2d) {
 		err("[DBG] S2D!!!", buf);
 		dump_stack();
-#if defined(CONFIG_DEBUG_SNAPSHOT_MODULE)
+#if defined(CONFIG_S3C2410_WATCHDOG)
+		s3c2410wdt_set_emergency_reset(100, 0);
+#elif defined(CONFIG_DEBUG_SNAPSHOT_MODULE)
 		dbg_snapshot_expire_watchdog();
 #else
 		panic("S2D is not enabled.", buf);

@@ -2310,6 +2310,15 @@ static struct v4l2_queryctrl enc_controls[] = {
 		.step = 1,
 		.default_value = 0,
 	},
+	{
+		.id = V4L2_CID_MPEG_MFC_MULTI_VIEW_ENABLE,
+		.type = V4L2_CTRL_TYPE_INTEGER,
+		.name = "Multi-View Enable",
+		.minimum = 0,
+		.maximum = 2,
+		.step = 1,
+		.default_value = 0,
+	},
 };
 
 #define ENC_NUM_CTRLS ARRAY_SIZE(enc_controls)

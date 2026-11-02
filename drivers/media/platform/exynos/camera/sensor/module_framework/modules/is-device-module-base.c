@@ -40,9 +40,15 @@
 #if defined(CONFIG_CAMERA_PAFSTAT)
 #include "pafstat/is-pafstat.h"
 #endif
-#ifdef CAMERA_MODULE_DUAL_CAL_AVAILABLE_VERSION
 #include "is-sec-define.h"
+#ifdef CONFIG_LEDS_S2MU106_FLASH
+#include <linux/muic/common/muic.h>
+#include <linux/muic/slsi/s2mu106/s2mu106-muic.h>
+#include <linux/muic/slsi/s2mu106/s2mu106-muic-hv.h>
+#include <linux/usb/typec/slsi/common/usbpd_ext.h>
 #endif
+
+extern struct is_cdr g_cdr;
 
 static int get_sensor_by_model_id(struct v4l2_subdev *subdev_cis, int model_id)
 {
@@ -149,6 +155,9 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 
 	ret = CALL_CISOPS(&sensor_peri->cis, cis_check_rev_on_init, subdev_cis);
 	if (ret < 0) {
+		g_cdr.time = ktime_get_boottime_ns();
+		g_cdr.err_type = CDR_ERR_TYPE_I2C;
+
 		if (device != NULL && ret == -EAGAIN) {
 			err("Checking sensor revision is fail. So retry camera power sequence.");
 			sensor_module_power_reset(subdev, device);
@@ -345,14 +354,21 @@ int sensor_module_deinit(struct v4l2_subdev *subdev)
 			if (ret) {
 				err("failed to turn off flash at flash expired handler\n");
 			}
+#ifdef CONFIG_LEDS_S2MU106_FLASH
+			pdo_ctrl_by_flash(0);
+			muic_afc_request_voltage(FLED, 9);
+			info("[%s](%d) MAIN Flash ERR: Power Down set Clear(5V -> 9V).\n" ,__func__,__LINE__);
+#endif
 		}
 	}
 
+#if 0 // No need to vendor code for specific actuator_softlanding
 	if (sensor_peri->actuator) {
 		ret = is_sensor_peri_actuator_softlanding(sensor_peri);
 		if (ret)
 			err("failed to soft landing control of actuator driver\n");
 	}
+#endif
 
 	if (sensor_peri->flash != NULL) {
 		cancel_work_sync(&sensor_peri->flash->flash_data.flash_fire_work);
@@ -988,7 +1004,27 @@ int sensor_module_s_ext_ctrls(struct v4l2_subdev *subdev, struct v4l2_ext_contro
 #endif
 			break;
 		}
+		case V4L2_CID_IS_GET_REMOSAIC_CAL:
+		{
+			char *remosaic_cal = NULL;
+			int remosaic_cal_size = 0;
+			ret = is_get_remosaic_cal_buf(device->position, &remosaic_cal, &remosaic_cal_size);
 
+			if (ret == 0) {
+				info("remosaic cal[%d] : size(%d)", device->position, remosaic_cal_size);
+				ret = copy_to_user(ext_ctrl->ptr, remosaic_cal, remosaic_cal_size);
+				if (ret) {
+					err("failed copying %d bytes of data\n", ret);
+					ret = -EINVAL;
+					goto p_err;
+				}
+			} else {
+				err("failed to is_get_remosaic_cal_buf : %d\n", ret);
+				ret = -EINVAL;
+				goto p_err;
+			}
+			break;
+		}
 		default:
 			ctrl.id = ext_ctrl->id;
 			ctrl.value = ext_ctrl->value;
@@ -1403,7 +1439,7 @@ static int sensor_module_probe(struct platform_device *pdev)
 		goto p_err;
 	}
 
-	probe_info("%s(%s) pdata->id(%d), module_count = %d\n", __func__,
+	probe_info("[@]%s(%s) pdata->id(%d), module_count = %d\n", __func__,
 			pdata->sensor_name,
 			pdata->id,
 			atomic_read(&device->module_count));
@@ -1520,7 +1556,6 @@ static int sensor_module_probe(struct platform_device *pdev)
 	v4l2_set_subdevdata(subdev_module, module);
 	v4l2_set_subdev_hostdata(subdev_module, device);
 	snprintf(subdev_module->name, V4L2_SUBDEV_NAME_SIZE, "sensor-subdev.%s", module->sensor_name);
-	probe_info("module->cfg=%p module->cfgs=%d\n", module->cfg, module->cfgs);
 
 	if (device->pdata->i2c_dummy_enable) {
 		probe_info("%s: try to use match seq", __func__);

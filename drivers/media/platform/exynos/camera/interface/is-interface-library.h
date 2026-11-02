@@ -19,8 +19,6 @@
 #include "is-param.h"
 
 
-#define SET_CPU_AFFINITY	/* enable @ Exynos3475 */
-
 #if !defined(DISABLE_LIB)
 /* #define LIB_MEM_TRACK */
 #endif
@@ -340,6 +338,7 @@ struct fd_info {
 int is_load_bin(void);
 void is_load_clear(void);
 int is_init_ddk_thread(void);
+void is_set_ddk_thread_affinity(void);
 void is_flush_ddk_thread(void);
 void check_lib_memory_leak(void);
 

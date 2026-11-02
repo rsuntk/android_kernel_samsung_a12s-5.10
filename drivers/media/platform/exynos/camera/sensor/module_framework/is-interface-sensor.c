@@ -3939,7 +3939,7 @@ int get_delayed_preflash_time(struct is_sensor_interface *itf, u32 *delayedTime)
 
 	ctrl.id = V4L2_CID_FLASH_GET_DELAYED_PREFLASH_TIME;
 	ctrl.value = 0;
-	ret = v4l2_subdev_call(subdev_flash, core, ioctl, SENSOR_IOCTL_FLS_G_CTRL, &ctrl);
+	ret = v4l2_subdev_call(subdev_flash, core, ioctl, SENSOR_IOCTL_FLS_G_CTRL,&ctrl);
 	if (ret) {
 		dbg_flash("[%s] get fail (%d)\n", __func__, ret);
 		ret = -1;

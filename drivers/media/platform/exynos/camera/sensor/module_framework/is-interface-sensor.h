@@ -503,7 +503,7 @@ struct is_cis_ops {
 	int (*cis_retention_prepare)(struct v4l2_subdev *subdev);
 	int (*cis_retention_crc_check)(struct v4l2_subdev *subdev);
 #endif
-#ifdef USE_CAMERA_MIPI_CLOCK_VARIATION
+#ifdef USE_CAMERA_ADAPTIVE_MIPI
 	int (*cis_update_mipi_info)(struct v4l2_subdev *subdev);
 	int (*cis_get_mipi_clock_string)(struct v4l2_subdev *subdev, char *cur_mipi_str);
 #endif

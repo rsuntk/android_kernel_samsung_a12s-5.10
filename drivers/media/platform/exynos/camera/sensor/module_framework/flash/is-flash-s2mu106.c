@@ -61,7 +61,6 @@ static int flash_s2mu106_init(struct v4l2_subdev *subdev, u32 val)
 			s2mu106_fled_set_mode_ctrl(flash->led_ch[i], CAM_FLASH_MODE_OFF);
 	}
 
-	s2mu106_led_mode_ctrl(0);
 	return ret;
 }
 
@@ -180,22 +179,62 @@ static int sensor_s2mu106_flash_control(struct v4l2_subdev *subdev, enum flash_m
 		mode == CAM2_FLASH_MODE_SINGLE ? "FLASH" : "TORCH",
 		intensity);
 
-	if (mode == CAM2_FLASH_MODE_OFF) {
-		ret = s2mu106_led_mode_ctrl(S2MU106_FLED_MODE_OFF);
-		if (ret)
-			err("torch/flash off fail");
-	} else if (mode == CAM2_FLASH_MODE_SINGLE) {
-		ret = s2mu106_led_mode_ctrl(S2MU106_FLED_MODE_FLASH);
-		if (ret)
-			err("capture flash on fail");
-	} else if (mode == CAM2_FLASH_MODE_TORCH) {
-		ret = s2mu106_led_mode_ctrl(S2MU106_FLED_MODE_TORCH);
-		if (ret)
-			err("torch flash on fail");
-	} else {
-		err("Invalid flash mode");
-		ret = -EINVAL;
-		goto p_err;
+	adj_current = sensor_s2mu106_flash_adj_current(flash, mode, intensity);
+
+	for (i = 0; i < FLASH_LED_CH_MAX; i++) {
+		if (flash->led_ch[i] == -1)
+			continue;
+#ifdef FLASH_CAL_DATA_ENABLE
+		adj_current = flash->flash_data.cal_input_curr[i];
+
+		/* If adj_current value is zero, it must be skipped to set */
+		/* Even if zero is set to flash, 50mA will flow, because 50mA is minimized value */
+		if (adj_current == 0 && mode != CAM2_FLASH_MODE_OFF) {
+			dbg_flash("[CH: %d] current value is 0, so current set need to skip\n", flash->led_ch[i]);
+			continue;
+		}
+
+		dbg_flash("[CH: %d] current is set with val: %d\n", flash->led_ch[i], adj_current);
+#endif
+		switch (mode) {
+		case CAM2_FLASH_MODE_OFF:
+			ret = s2mu106_fled_set_mode_ctrl(flash->led_ch[i], CAM_FLASH_MODE_OFF);
+			if (ret < 0) {
+				err("flash off fail(led_ch:%d)", flash->led_ch[i]);
+				ret = -EINVAL;
+			}
+			break;
+		case CAM2_FLASH_MODE_SINGLE:
+			ret = s2mu106_fled_set_curr(flash->led_ch[i], CAM_FLASH_MODE_SINGLE);
+			if (ret < 0) {
+				err("capture flash set current fail(led_ch:%d)", flash->led_ch[i]);
+				ret = -EINVAL;
+			}
+
+			ret |= s2mu106_fled_set_mode_ctrl(flash->led_ch[i], CAM_FLASH_MODE_SINGLE);
+			if (ret < 0) {
+				err("capture flash on fail(led_ch:%d)", flash->led_ch[i]);
+				ret = -EINVAL;
+			}
+			break;
+		case CAM2_FLASH_MODE_TORCH:
+			ret = s2mu106_fled_set_curr(flash->led_ch[i], CAM_FLASH_MODE_TORCH);
+			if (ret < 0) {
+				err("torch flash set current fail(led_ch:%d)", flash->led_ch[i]);
+				ret = -EINVAL;
+			}
+
+			ret |= s2mu106_fled_set_mode_ctrl(flash->led_ch[i], CAM_FLASH_MODE_TORCH);
+			if (ret < 0) {
+				err("torch flash on fail(led_ch:%d)", flash->led_ch[i]);
+				ret = -EINVAL;
+			}
+			break;
+		default:
+			err("Invalid flash mode");
+			ret = -EINVAL;
+			goto p_err;
+		}
 	}
 
 p_err:

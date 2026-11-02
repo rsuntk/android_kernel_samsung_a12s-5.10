@@ -338,7 +338,6 @@ static int is_ischain_mxp_compare_size_stripe(struct is_device_ischain *device,
 
 	return changed;
 }
-
 static int is_ischain_mxp_compare_size(struct is_device_ischain *device,
 	struct mcs_param *mcs_param,
 	struct is_crop *incrop)

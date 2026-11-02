@@ -410,21 +410,6 @@ int sensor_2p6_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 		dbg_sensor(1, "[%s] mode(%d) paf_stat_enable(%d) \n",
 			__func__, mode, cis->cis_data->is_data.paf_stat_enable);
 	}
-	
-	/* In case of VT Call, forced to set pdaf off */
-	if (cis->use_pdaf == true) {
-		switch (mode) {
-			case SENSOR_2P6_MODE_2304X1728_30:
-			case SENSOR_2P6_MODE_2304X1728_15:
-			case SENSOR_2P6_MODE_2304X1296_30:
-				cis->cis_data->is_data.paf_stat_enable = false;
-				dbg_sensor(1, "[%s] mode(%d) paf_stat_enable(%d) \n",
-					__func__, mode, cis->cis_data->is_data.paf_stat_enable);
-				break;
-			default:
-				break;
-		}
-	}
 
 #if defined(USE_SENSOR_WDR)
 	/* In case of fastAE or high speed fps, forced to set wdr off */
@@ -1938,24 +1923,12 @@ static struct i2c_driver cis_2p6_driver = {
 	.driver = {
 		.name	= SENSOR_NAME,
 		.owner	= THIS_MODULE,
-		.of_match_table = exynos_is_cis_2p6_match,
-		.suppress_bind_attrs = true,
+		.of_match_table = exynos_is_cis_2p6_match
 	},
 	.probe	= cis_2p6_probe,
 	.remove	= cis_2p6_remove,
 	.id_table = cis_2p6_idt
 };
+module_i2c_driver(cis_2p6_driver);
 
-static int __init sensor_cis_2p6_init(void)
-{
-	int ret;
-
-	ret = i2c_add_driver(&cis_2p6_driver);
-	if (ret)
-		err("failed to add %s driver: %d\n",
-			cis_2p6_driver.driver.name, ret);
-
-	return ret;
-}
-late_initcall_sync(sensor_cis_2p6_init);
 MODULE_LICENSE("GPL");

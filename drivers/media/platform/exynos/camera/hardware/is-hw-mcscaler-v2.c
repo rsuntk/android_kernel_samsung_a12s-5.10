@@ -245,7 +245,7 @@ static int is_hw_mcsc_open(struct is_hw_ip *hw_ip, u32 instance,
 	if (test_bit(HW_OPEN, &hw_ip->state))
 		return 0;
 
-	frame_manager_probe(hw_ip->framemgr, BIT(hw_ip->id), "HWMCS");
+	frame_manager_probe(hw_ip->framemgr, hw_ip->id, "HWMCS");
 	frame_manager_open(hw_ip->framemgr, IS_MAX_HW_FRAME);
 
 	hw_ip->priv_info = vzalloc(sizeof(struct is_hw_mcsc));

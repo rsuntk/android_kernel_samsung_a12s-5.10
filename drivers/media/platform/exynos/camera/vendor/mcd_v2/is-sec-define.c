@@ -2786,7 +2786,8 @@ exit:
 int is_sec_i2c_read_otp_gc5035(struct i2c_client *client, char *buf,
 				   u16 start_addr, size_t size)
 {
-	u16 curr_addr = start_addr;
+	return 0;
+	/*	u16 curr_addr = start_addr;
 	u8 start_addr_h = 0;
 	u8 start_addr_l = 0;
 	u8 busy_flag = 0;
@@ -2843,10 +2844,13 @@ int is_sec_i2c_read_otp_gc5035(struct i2c_client *client, char *buf,
 
 exit:
 	return ret;
+*/
 }
 
 int is_sec_readcal_otprom_gc5035(int rom_id)
 {
+	return 0;
+#if 0
 	int ret = 0;
 	int retry = IS_CAL_RETRY_CNT;
 	char *buf = NULL;
@@ -2868,12 +2872,7 @@ int is_sec_readcal_otprom_gc5035(int rom_id)
 	u32 i2c_channel;
 	int position = is_vendor_get_position_from_rom_id(rom_id);
 
-	if(rom_id == 1) {
-		bank1_addr = GC5035_FRONT_OTP_START_ADDR_BANK1;
-		bank2_addr = GC5035_FRONT_OTP_START_ADDR_BANK2;
-		cal_size = GC5035_FRONT_OTP_USED_CAL_SIZE;
-	}
-	else if(rom_id == 2) {
+	if(rom_id == 2) {
 		bank1_addr = GC5035_BOKEH_OTP_START_ADDR_BANK1;
 		bank2_addr = GC5035_BOKEH_OTP_START_ADDR_BANK2;
 		cal_size = GC5035_BOKEH_OTP_USED_CAL_SIZE;
@@ -3036,6 +3035,7 @@ crc_retry:
 
 exit:
 	return ret;
+#endif
 }
 
 int is_sec_i2c_read_otp_gc02m1(struct i2c_client *client, char *buf,
@@ -3209,10 +3209,10 @@ int is_sec_readcal_otprom(int rom_id)
 	is_sec_get_cal_buf(&buf, rom_id);
 
 	switch (sensor_id) {
+#if 0
 		case SENSOR_NAME_GC5035:
 			ret = is_sec_readcal_otprom_gc5035(rom_id);
 			break;
-#if 0
 		case SENSOR_NAME_GC02M1:
 			ret = is_sec_readcal_otprom_gc02m1(rom_id);
 			break;
