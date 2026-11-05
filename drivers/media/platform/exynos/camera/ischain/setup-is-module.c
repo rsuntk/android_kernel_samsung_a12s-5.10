@@ -101,7 +101,7 @@ static int exynos_is_module_pin_control(struct is_module_enum *module,
 	}
 
 	resourcemgr = sensor->resourcemgr;
-	if (!sensor) {
+	if (!resourcemgr) {
 		merr("[M%d] failed to get resourcemgr\n", module, module->sensor_id);
 		return -EINVAL;
 	}
@@ -152,16 +152,19 @@ static int exynos_is_module_pin_control(struct is_module_enum *module,
 		break;
 	case PIN_REGULATOR:
 		{
-			struct is_module_regulator *is_regulator = NULL;
+			struct is_module_regulator *is_regulator = NULL, *iter;
 
-			list_for_each_entry(is_regulator, &resourcemgr->regulator_list, list) {
-				if (!strcmp(is_regulator->name, name))
+			list_for_each_entry(iter, &resourcemgr->regulator_list, list) {
+				if (!strcmp(iter->name, name)) {
+					is_regulator = iter;
 					break;
+				}
 			}
 
-			if (IS_ERR_OR_NULL(is_regulator)) {
-				merr("[M%d] failed to get is_module_regulator",
-					module, module->sensor_id);
+			if (!is_regulator) {
+				merr("[M%d] failed to get is_module_regulator(%s)",
+					module, module->sensor_id, name);
+				return -ENODEV;
 			}
 
 			if (value) {

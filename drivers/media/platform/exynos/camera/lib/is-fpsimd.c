@@ -50,11 +50,17 @@ static int is_fpsimd_push(bool flushed, bool func)
 	struct is_fpsimd_stack *s = &fpsimd_stack[smp_processor_id()];
 	int idx = s->depth;
 
+	/*
+	 * Always count the frame, even when it does not fit: the matching put
+	 * will pop it, and an unaccounted frame would make that pop eat the
+	 * caller's frame instead.
+	 */
+	s->depth = idx + 1;
+	barrier();
+
 	if (WARN_ONCE(idx >= IS_FPSIMD_MAX_DEPTH, "is_fpsimd: depth %d overflow\n", idx))
 		return -1;
 
-	s->depth = idx + 1;
-	barrier();
 	s->saved[idx] = !flushed;
 	s->func[idx] = func;
 	if (!flushed)
@@ -71,7 +77,8 @@ static void is_fpsimd_pop(void)
 	if (WARN_ONCE(idx < 0, "is_fpsimd: unbalanced put\n"))
 		return;
 
-	if (s->saved[idx])
+	/* frames past the array (overflow) have nothing saved */
+	if (idx < IS_FPSIMD_MAX_DEPTH && s->saved[idx])
 		is_fpsimd_load_state(&s->state[idx]);
 	barrier();
 	s->depth = idx;
@@ -124,13 +131,17 @@ static bool is_fpsimd_get_func_task(void)
 	if (ctx)
 		return true;
 
-	ctx = kmalloc(sizeof(*ctx), GFP_KERNEL);
+	/*
+	 * Do not fall back to the atomic path on failure: the caller is here
+	 * because the DDK may sleep, and a sleep with IRQs/preemption off is
+	 * worse than waiting for a small allocation.
+	 */
+	ctx = kmalloc(sizeof(*ctx), GFP_KERNEL | __GFP_NOFAIL);
 	if (!ctx)
 		return false;
 
 	ctx->task = current;
 	ctx->depth = 1;
-	is_fpsimd_notifier_on();
 	is_fpsimd_get_task(&ctx->t);
 
 	spin_lock_irqsave(&fpsimd_func_lock, flags);
@@ -143,14 +154,19 @@ static void is_fpsimd_put_func_task(void)
 {
 	struct is_fpsimd_func_ctx *ctx;
 	unsigned long flags;
+	bool found;
 
 	spin_lock_irqsave(&fpsimd_func_lock, flags);
 	ctx = is_fpsimd_func_ctx_find();
+	found = !!ctx;
 	if (ctx && --ctx->depth == 0)
 		hash_del(&ctx->node);
 	else
 		ctx = NULL;
 	spin_unlock_irqrestore(&fpsimd_func_lock, flags);
+
+	WARN_ONCE(!found, "is_fpsimd: put_func without matching get_func (task %s)\n",
+		  current->comm);
 
 	if (ctx) {
 		is_fpsimd_put_task(&ctx->t);
@@ -172,8 +188,16 @@ void is_fpsimd_get_func(void)
 	local_irq_save(flags);
 
 	idx = is_fpsimd_push(flushed, true);
-	if (idx >= 0)
+	if (idx >= 0) {
 		fpsimd_stack[smp_processor_id()].irq_flags[idx] = flags;
+	} else {
+		/*
+		 * Overflow: no slot to keep the IRQ flags or the state in.
+		 * Run the DDK with IRQs as they were, but keep the preempt count
+		 * so put_func still lands on this CPU's stack.
+		 */
+		local_irq_restore(flags);
+	}
 }
 
 void is_fpsimd_put_func(void)
@@ -181,10 +205,21 @@ void is_fpsimd_put_func(void)
 	struct is_fpsimd_stack *s;
 	unsigned long flags;
 	bool atomic;
+	int idx;
 
 	preempt_disable();
 	s = &fpsimd_stack[smp_processor_id()];
-	atomic = s->depth > 0 && s->func[s->depth - 1];
+	idx = s->depth - 1;
+
+	if (idx >= IS_FPSIMD_MAX_DEPTH) {
+		/* get_func overflowed: only its preempt count is outstanding */
+		is_fpsimd_pop();
+		preempt_enable();	/* ours */
+		preempt_enable();	/* get_func's */
+		return;
+	}
+
+	atomic = idx >= 0 && s->func[idx];
 	preempt_enable();
 
 	if (!atomic) {
@@ -192,7 +227,7 @@ void is_fpsimd_put_func(void)
 		return;
 	}
 
-	flags = s->irq_flags[s->depth - 1];
+	flags = s->irq_flags[idx];
 	WARN_ONCE(!irqs_disabled(), "is_fpsimd: DDK returned with IRQs enabled\n");
 
 	is_fpsimd_pop();
@@ -228,6 +263,9 @@ static struct preempt_ops is_fpsimd_task_ops = {
 
 void is_fpsimd_get_task(struct is_fpsimd_task *t)
 {
+	/* the key must be on before the first registration, and inc may sleep */
+	is_fpsimd_notifier_on();
+
 	preempt_disable();
 	is_fpsimd_flush();
 	preempt_notifier_init(&t->pn, &is_fpsimd_task_ops);

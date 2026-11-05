@@ -3059,7 +3059,8 @@ int is_sec_readcal_otprom_sr846(int rom_id, struct is_rom_info *finfo,
 				   ARRAY_SIZE(sensor_sr846_setfile_otp_init), position);
 	if (unlikely(ret)) {
 		err("failed to apply sr846 otprom init settings (%d)\n", ret);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	ret = is_sensor_write8(client, SR846_CP_TRIM_H_ADDR, 0x01);

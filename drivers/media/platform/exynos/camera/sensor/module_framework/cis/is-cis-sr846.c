@@ -443,7 +443,7 @@ int sensor_sr846_cis_mode_change(struct v4l2_subdev *subdev, u32 mode)
 	FIMC_BUG(!cis->cis_data);
 
 	max_setfile_num = sensor_sr846_max_setfile_num;
-	if (mode > max_setfile_num) {
+	if (mode >= max_setfile_num) {
 		err("invalid mode(%d)!!", mode);
 		ret = -EINVAL;
 		return ret;
@@ -1763,7 +1763,7 @@ int cis_sr846_probe(struct i2c_client *client,
 	if (!cis->cis_data) {
 		err("cis_data is NULL");
 		ret = -ENOMEM;
-		goto p_err;
+		goto p_err_free;
 	}
 
 	cis->cis_ops = &cis_ops;
@@ -1787,7 +1787,8 @@ int cis_sr846_probe(struct i2c_client *client,
 			}
 			else {
 				err("%s: sensor id does not match", __func__);
-				goto p_err;
+				ret = -ENODEV;
+				goto p_err_free;
 			}
 		}
 	}
@@ -1812,6 +1813,7 @@ int cis_sr846_probe(struct i2c_client *client,
 	if (ret) {
 		err("setfile index read fail(%d), take default setfile!!", ret);
 		setfile = "default";
+		ret = 0;
 	}
 
 	if (strcmp(setfile, "default") == 0 ||
@@ -1866,6 +1868,16 @@ int cis_sr846_probe(struct i2c_client *client,
 
 	probe_info("%s done\n", __func__);
 
+	return 0;
+
+p_err_free:
+	/* v4l2_i2c_subdev_init() has not run yet, so plain kfree() is enough */
+	kfree(cis->cis_data);
+	cis->cis_data = NULL;
+	cis->cis_ops = NULL;
+	cis->subdev = NULL;
+	sensor_peri->subdev_cis = NULL;
+	kfree(subdev_cis);
 p_err:
 	return ret;
 }

@@ -2124,7 +2124,7 @@ int cis_gc02m1_probe(struct i2c_client *client,
 	if (!cis->cis_data) {
 		err("cis_data is NULL");
 		ret = -ENOMEM;
-		goto p_err;
+		goto p_err_free;
 	}
 
 	cis->cis_ops = &cis_ops;
@@ -2158,6 +2158,7 @@ int cis_gc02m1_probe(struct i2c_client *client,
 	if (ret) {
 		err("setfile index read fail(%d), take default setfile!!", ret);
 		setfile = "default";
+		ret = 0;
 	}
 
 	if (strcmp(setfile, "default") == 0 || strcmp(setfile, "setA") == 0) {
@@ -2205,6 +2206,15 @@ int cis_gc02m1_probe(struct i2c_client *client,
 
 	probe_info("%s done\n", __func__);
 
+	return 0;
+
+p_err_free:
+	/* v4l2_i2c_subdev_init() has not run yet, so plain kfree() is enough */
+	kfree(cis->cis_data);
+	cis->cis_data = NULL;
+	cis->subdev = NULL;
+	sensor_peri->subdev_cis = NULL;
+	kfree(subdev_cis);
 p_err:
 	return ret;
 }
