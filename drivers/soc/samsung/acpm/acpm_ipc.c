@@ -779,9 +779,11 @@ static int acpm_ipc_die_handler(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+#if 0
 static struct notifier_block nb_die_block = {
 	.notifier_call = acpm_ipc_die_handler,
 };
+#endif
 
 static struct notifier_block nb_panic_block = {
 	.notifier_call = acpm_ipc_die_handler,
