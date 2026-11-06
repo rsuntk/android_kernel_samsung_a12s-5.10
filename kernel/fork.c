@@ -2475,9 +2475,9 @@ static __latent_entropy struct task_struct *copy_process(
 		retval = -EINTR;
 		goto bad_fork_cancel_cgroup;
 	}
- 	retval = task_integrity_apply(clone_flags, p);
+	retval = task_integrity_apply(clone_flags, p);
 	if (retval)
-		goto bad_fork_cancel_cgroup; 
+		goto bad_fork_cancel_cgroup;
 	/* No more failure paths after this point. */
 
 	/*
