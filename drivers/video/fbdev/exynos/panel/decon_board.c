@@ -421,17 +421,7 @@ exit:
 
 static int is_dummy_regulator(struct regulator_bulk_data *bulk)
 {
-	struct regulator_dev *rdev = NULL;
-	int ret = 0;
-
-	rdev = bulk->consumer->rdev;
-
-#if SHOULD_CHECK_LATER
-	ret = (rdev && rdev != dummy_regulator_rdev) ? 0 : 1;
-#else
-	ret = 0;
-#endif
-	return ret;
+	return 0;
 }
 
 static int decide_subinfo(struct device_node *np, struct action_info *action)
@@ -1430,11 +1420,7 @@ int of_update_phandle_property_list(struct device_node *from, const char *phandl
 		seq_printf(&m, "%s ", node_names[i]);
 	}
 
-#if SHOULD_CHECK_LATER
-	ret = of_update_property(parent, prop_new);
-#else
 	ret = of_add_property(parent, prop_new);
-#endif
 	if (ret) {
 		dbg_info("of_update_property fail: %d\n", ret);
 		kfree(prop_new->value);
@@ -1523,11 +1509,7 @@ static int __of_update_recommend(struct device_node *np, unsigned int recommend)
 		prop_new->value = "ok";
 		prop_new->length = sizeof("ok");
 
-#if SHOULD_CHECK_LATER
-		ret = of_update_property(np, prop_new);
-#else
 		ret = of_add_property(np, prop_new);
-#endif
 	} else {
 		struct property *prop = NULL;
 
