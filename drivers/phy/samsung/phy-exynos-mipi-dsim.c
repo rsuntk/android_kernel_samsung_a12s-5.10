@@ -560,6 +560,7 @@ static const struct exynos_mipi_phy_cfg phy_cfg_table[] = {
 	{ },
 };
 
+#if 0
 static int __set_phy_cfg(struct exynos_mipi_phy *state,
 		struct mipi_phy_desc *phy_desc, int option, void *info)
 {
@@ -579,6 +580,7 @@ static int __set_phy_cfg(struct exynos_mipi_phy *state,
 
 	return ret;
 }
+#endif
 
 static struct exynos_mipi_phy_data mipi_phy_m4m4 = {
 	.flags = MIPI_PHY_MxMx_SHARED,
