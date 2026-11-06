@@ -315,6 +315,7 @@ static int exynos_pd_genpd_init(struct exynos_pm_domain *pd, int state)
  *
  * read the status of power domain and show it.
  */
+#if 0
 static void exynos_pd_show_power_domain(void)
 {
 	struct device_node *np;
@@ -335,6 +336,7 @@ static void exynos_pd_show_power_domain(void)
 
 	return;
 }
+#endif
 
 static int exynos_pd_probe(struct platform_device *pdev)
 {
