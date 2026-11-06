@@ -36,6 +36,7 @@
 #undef fn_ELF_R_INFO
 #undef uint_t
 #undef _r
+#undef _w
 
 #ifdef SORTTABLE_64
 # define extable_ent_size	16
@@ -57,6 +58,7 @@
 # define fn_ELF_R_INFO		fn_ELF64_R_INFO
 # define uint_t			uint64_t
 # define _r			r8
+# define _w			w8
 #else
 # define extable_ent_size	8
 # define compare_extable	compare_extable_32
@@ -77,6 +79,7 @@
 # define fn_ELF_R_INFO		fn_ELF32_R_INFO
 # define uint_t			uint32_t
 # define _r			r
+# define _w			w
 #endif
 
 #if defined(SORTTABLE_64) && defined(UNWINDER_ORC_ENABLED)
