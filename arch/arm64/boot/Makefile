@@ -16,7 +16,13 @@
 
 OBJCOPYFLAGS_Image :=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 
-targets := Image Image.bz2 Image.gz Image.lz4 Image.lzma Image.lzo
+targets := Image Image.bz2 Image.gz Image.lz4 Image.lzma Image.lzo dtbo.img
+
+DTBO_OBJS := $(shell find $(obj)/dts/ -name \*.dtbo)
+
+# mkdtboimg .cfg file; relative paths are resolved against srctree
+DTBO_CFG := $(subst $\",,$(CONFIG_BUILD_ARM64_DTBO_CFG))
+DTBO_CFG := $(if $(filter /%,$(DTBO_CFG)),$(DTBO_CFG),$(srctree)/$(DTBO_CFG))
 
 $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)
@@ -35,6 +41,9 @@ $(obj)/Image.lzma: $(obj)/Image FORCE
 
 $(obj)/Image.lzo: $(obj)/Image FORCE
 	$(call if_changed,lzo)
+
+$(obj)/dtbo.img: $(DTBO_OBJS) $(DTBO_CFG) FORCE
+	$(call if_changed,mkdtboimg_cfg)
 
 install:
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \

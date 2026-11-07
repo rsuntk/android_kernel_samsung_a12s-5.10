@@ -2145,3 +2145,14 @@ source "arch/arm64/kvm/Kconfig"
 if CRYPTO
 source "arch/arm64/crypto/Kconfig"
 endif
+
+config BUILD_ARM64_DTBO_CFG
+	string "Path to dtboimg .cfg file used to create dtbo.img"
+	default ""
+	help
+	  Path to a mkdtboimg .cfg file (relative to the kernel source
+	  tree, or absolute) describing which dtbo files are packed into
+	  dtbo.img and with which entry options.
+
+	  If empty, all build-time generated *.dtbo files are packed
+	  into dtbo.img.

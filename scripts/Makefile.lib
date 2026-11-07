@@ -407,6 +407,11 @@ $(obj)/%.dt.yaml: $(src)/%.dts $(DTC) $(DT_TMP_SCHEMA) FORCE
 
 dtc-tmp = $(subst $(comma),_,$(dot-target).dts.tmp)
 
+# mkdtboimg
+# ---------------------------------------------------------------------------
+quiet_cmd_mkdtboimg_cfg = DTBOIMG $@
+      cmd_mkdtboimg_cfg = $(PYTHON3) $(srctree)/scripts/mkdtboimg.py cfg_create $@ $(DTBO_CFG) --dtb-dir $(obj)/dts
+
 # Bzip2
 # ---------------------------------------------------------------------------
 

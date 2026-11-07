@@ -156,6 +156,8 @@ libs-$(CONFIG_EFI_STUB) += $(objtree)/drivers/firmware/efi/libstub/lib.a
 # Default target when executing plain make
 boot		:= arch/arm64/boot
 KBUILD_IMAGE	:= $(boot)/Image.gz
+KBUILD_DTBO_IMG	:= dtbo.img
+KBUILD_DTBO_CFG	:= $(subst $\",,$(CONFIG_BUILD_ARM64_DTBO_CFG))
 
 # Don't compile Image in mixed build with "all" target
 ifndef KBUILD_MIXED_TREE
@@ -168,6 +170,14 @@ Image: vmlinux
 
 Image.%: Image
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+
+ifneq ($(KBUILD_DTBO_CFG),)
+PHONY += $(KBUILD_DTBO_IMG)
+$(KBUILD_DTBO_IMG): dtbs
+	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+
+all: $(KBUILD_DTBO_IMG)
+endif
 
 zinstall install:
 	$(Q)$(MAKE) $(build)=$(boot) $@
