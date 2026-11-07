@@ -588,7 +588,7 @@ exit:
 	return retval;
 }
 
-int get_proximity() {
+int get_proximity(void) {
 	
 	int sum, ret;
 	struct sec_factory_test_mode mode;
