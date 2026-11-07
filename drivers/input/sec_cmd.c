@@ -542,23 +542,21 @@ static ssize_t sec_cmd_show_result_all(struct device *dev,
 }
 
 static ssize_t sec_cmd_list_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+                struct device_attribute *attr, char *buf)
 {
 	struct sec_cmd_data *data = dev_get_drvdata(dev);
 	struct sec_cmd *sec_cmd_ptr = NULL;
-	char buffer[data->cmd_buffer_size + 30];
-	char buffer_name[SEC_CMD_STR_LEN];
+	int len = 0;
 
-	snprintf(buffer, 30, "++factory command list++\n");
+	len += sysfs_emit_at(buf, len, "++factory command list++\n");
 
 	list_for_each_entry(sec_cmd_ptr, &data->cmd_list_head, list) {
 		if (strncmp(sec_cmd_ptr->cmd_name, "not_support_cmd", 15)) {
-			snprintf(buffer_name, SEC_CMD_STR_LEN, "%s\n", sec_cmd_ptr->cmd_name);
-			strncat(buffer, buffer_name, SEC_CMD_STR_LEN);
+			len += sysfs_emit_at(buf, len, "%s\n", sec_cmd_ptr->cmd_name);
 		}
 	}
 
-	return snprintf(buf, SEC_CMD_BUF_SIZE, "%s\n", buffer);
+	return len;
 }
 
 static DEVICE_ATTR(cmd, 0220, NULL, sec_cmd_store);
