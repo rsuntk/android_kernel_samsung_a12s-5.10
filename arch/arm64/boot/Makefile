@@ -18,7 +18,7 @@ OBJCOPYFLAGS_Image :=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 
 targets := Image Image.bz2 Image.gz Image.lz4 Image.lzma Image.lzo dtbo.img
 
-DTBO_OBJS := $(shell find $(obj)/dts/ -name \*.dtbo)
+DTBO_OBJS := $(abspath $(shell find $(obj)/dts/ -name \*.dtbo))
 
 # mkdtboimg .cfg file; relative paths are resolved against srctree
 DTBO_CFG := $(subst $\",,$(CONFIG_BUILD_ARM64_DTBO_CFG))
