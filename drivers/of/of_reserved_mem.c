@@ -246,6 +246,8 @@ static void __init __rmem_check_for_overlap(void)
 void __init fdt_init_reserved_mem(void)
 {
 	int i;
+	phys_addr_t end;
+	bool reusable = false;
 
 	/* check for overlapping reserved regions */
 	__rmem_check_for_overlap();
@@ -281,9 +283,8 @@ void __init fdt_init_reserved_mem(void)
 				memblock_memsize_record(rmem->name, rmem->base,
 							rmem->size, nomap,
 							reusable);
-				phys_addr_t end = rmem->base + rmem->size - 1;
-				bool reusable =
-					(of_get_flat_dt_prop(node, "reusable", NULL)) != NULL;
+				end = rmem->base + rmem->size - 1;
+				reusable = (of_get_flat_dt_prop(node, "reusable", NULL)) != NULL;
 
 				pr_info("%pa..%pa (%lu KiB) %s %s %s\n",
 					&rmem->base, &end, (unsigned long)(rmem->size / SZ_1K),
