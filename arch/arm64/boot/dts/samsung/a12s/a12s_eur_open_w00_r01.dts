@@ -3954,7 +3954,7 @@
 				compatible = "samsung,abox-ext-bin";
 				samsung,name = "txse1.bin";
 				samsung,area = <0x01>;
-				samsung,offset = <0xa00000>;
+				samsung,offset = <0x1000000>;
 				samsung,changeable;
 			};
 
@@ -3962,7 +3962,7 @@
 				compatible = "samsung,abox-ext-bin";
 				samsung,name = "txse2.bin";
 				samsung,area = <0x01>;
-				samsung,offset = <0xd00000>;
+				samsung,offset = <0xd80000>;
 				samsung,changeable;
 			};
 
@@ -3970,7 +3970,7 @@
 				compatible = "samsung,abox-ext-bin";
 				samsung,name = "rxse.bin";
 				samsung,area = <0x01>;
-				samsung,offset = <0xd60000>;
+				samsung,offset = <0xf00000>;
 				samsung,changeable;
 			};
 
