@@ -641,7 +641,7 @@ copy:
 
 static int parser_get_ini_phy_data(char *data, int fsize)
 {
-	int i, n = 0, ret = 0, banchmark_flag = 0, empty_section, nodetype_flag = 0;
+	int i, n = 0, ret = 0, empty_section = 0;
 	int offset = 0, isEqualSign = 0, scount = 0;
 	char *ini_buf = NULL, *tmpSectionName = NULL;
 	char M_CFG_SSL = '[';
@@ -674,9 +674,7 @@ static int parser_get_ini_phy_data(char *data, int fsize)
 	memset(seq_item, 0, MP_TEST_ITEM * PARSER_MAX_KEY_NAME_LEN * sizeof(char));
 
 	while (true) {
-		banchmark_flag = 0;
 		empty_section = 0;
-		nodetype_flag = 0;
 		if (g_ini_items > PARSER_MAX_KEY_NUM) {
 			input_err(true, ilits->dev, "%s MAX_KEY_NUM: Out of length\n", __func__);
 			goto out;
@@ -721,8 +719,6 @@ static int parser_get_ini_phy_data(char *data, int fsize)
 
 				ini_buf[n - 1] = 0x00;
 				strncpy((char *)tmpSectionName, ini_buf + 1, (PARSER_MAX_CFG_BUF + 1) * sizeof(char));
-				banchmark_flag = 0;
-				nodetype_flag = 0;
 				strncpy(seq_item[scount], tmpSectionName, PARSER_MAX_KEY_NAME_LEN);
 				scount++;
 				ILI_DBG("%s Section Name: %s, Len: %d, offset = %d\n",
