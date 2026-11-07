@@ -93,7 +93,7 @@ void sec_factory_print_frame(u32 *buf)
 
 int ilitek_node_mp_test_read(struct sec_cmd_data *sec, char *ini_path, int lcm_state)
 {
-	int ret = 0, len = 2;
+	int ret = 0;
 	bool esd_en = ilits->wq_esd_ctrl, bat_en = ilits->wq_bat_ctrl;
 	static unsigned char g_user_buf[USER_STR_BUFF] = {0};
 
@@ -126,7 +126,6 @@ int ilitek_node_mp_test_read(struct sec_cmd_data *sec, char *ini_path, int lcm_s
 
 	g_user_buf[0] = 3;
 	g_user_buf[1] = (ret < 0) ? -ret : ret;
-	len += ilits->mp_ret_len;
 
 	if (g_user_buf[1] == EMP_MODE)
 		input_err(true, ilits->dev, "%s Failed to switch MP mode, abort!", __func__);
