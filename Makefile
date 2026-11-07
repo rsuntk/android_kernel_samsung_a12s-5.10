@@ -9,6 +9,7 @@ NAME = Dare mighty things
 export TARGET_SOC="s5e3830"
 export PLATFORM_VERSION="14"
 export ANDROID_MAJOR_VERSION="u"
+export DTC_FLAGS="-@"
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
