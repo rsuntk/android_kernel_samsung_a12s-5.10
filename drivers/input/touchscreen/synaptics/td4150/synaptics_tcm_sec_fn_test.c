@@ -305,9 +305,9 @@ int test_abs_cap(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode)
 	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strlen(tcm_hcd->print_buf));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING) {
 		if (tcm_hcd->lcdoff_test) {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "LP_ABS_CAP");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "LP_ABS_CAP");
 		} else {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "ABS_CAP");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "ABS_CAP");
 		}
 	}
 	sec->cmd_state = SEC_CMD_STATUS_OK;
@@ -315,14 +315,14 @@ int test_abs_cap(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode)
 	return retval;
 
 exit:
-	snprintf(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf), "NG");
-	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)));
+	snprintf(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN, "NG");
+	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN));
 
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING) {
 		if (tcm_hcd->lcdoff_test) {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "LP_ABS_CAP");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "LP_ABS_CAP");
 		} else {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "ABS_CAP");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "ABS_CAP");
 		}
 	}
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -345,9 +345,9 @@ int test_noise(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode)
 	
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING) {
 		if (tcm_hcd->lcdoff_test) {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "LP_NOISE");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "LP_NOISE");
 		} else {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "NOISE");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "NOISE");
 		}
 	}
 
@@ -356,14 +356,14 @@ int test_noise(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode)
 	return retval;
 
 exit:
-	snprintf(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf), "NG");
-	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)));
+	snprintf(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN, "NG");
+	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN));
 
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING) {
 		if (tcm_hcd->lcdoff_test) {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "LP_NOISE");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "LP_NOISE");
 		} else {
-			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "NOISE");
+			sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "NOISE");
 		}
 	}
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -384,18 +384,18 @@ int test_open_short(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode
 
 	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strlen(tcm_hcd->print_buf));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "OPEN_SHORT");
+		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "OPEN_SHORT");
 
 	sec->cmd_state = SEC_CMD_STATUS_OK;
 
 	return retval;
 
 exit:
-	snprintf(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf), "NG");
-	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)));
+	snprintf(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN, "NG");
+	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN));
 
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "OPEN_SHORT");
+		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "OPEN_SHORT");
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
 
 	return retval;

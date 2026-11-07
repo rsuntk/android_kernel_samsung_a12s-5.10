@@ -471,7 +471,7 @@ static void run_fdm_noise_test_read(void *device_data)
 
 	sec_cmd_set_cmd_result(sec, tcm_hcd->print_buf, strlen(tcm_hcd->print_buf));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, sizeof(tcm_hcd->print_buf)), "FDM_NOISE");
+		sec_cmd_set_cmd_result_all(sec, tcm_hcd->print_buf, strnlen(tcm_hcd->print_buf, tcm_hcd->cols * tcm_hcd->rows * CMD_RESULT_WORD_LEN), "FDM_NOISE");
 
 	sec->cmd_state = SEC_CMD_STATUS_OK;
 }
