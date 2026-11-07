@@ -1404,7 +1404,6 @@ static int dwc3_exyons_kretprobe_init(void)
 {
 	int ret;
 	int i;
-	int array_size = ARRAY_SIZE(dwc3_exynos_probes);
 
 	for (i = 0; i < ARRAY_SIZE(dwc3_exynos_probes) ; i++) {
 		ret = register_kretprobe(&dwc3_exynos_probes[i]);
