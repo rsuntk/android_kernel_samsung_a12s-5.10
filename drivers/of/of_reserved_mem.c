@@ -247,7 +247,6 @@ void __init fdt_init_reserved_mem(void)
 {
 	int i;
 	phys_addr_t end;
-	bool reusable = false;
 
 	/* check for overlapping reserved regions */
 	__rmem_check_for_overlap();
