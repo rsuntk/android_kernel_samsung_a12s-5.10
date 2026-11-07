@@ -449,6 +449,7 @@ static int temp_to_code_with_sensorinfo(struct exynos_tmu_data *data, u16 temp, 
 	return temp_code;
 }
 
+#if 0
 /*
  * Calculate a temperature value from a temperature code.
  * The unit of the temperature is degree Celsius.
@@ -508,6 +509,8 @@ static int code_to_temp_with_sensorinfo(struct exynos_tmu_data *data, u16 temp_c
 
 	return temp;
 }
+#endif
+
 static int exynos_tmu_initialize(struct platform_device *pdev)
 {
 	struct exynos_tmu_data *data = platform_get_drvdata(pdev);
