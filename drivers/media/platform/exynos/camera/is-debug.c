@@ -13,6 +13,10 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 
+#if IS_ENABLED(CONFIG_S3C2410_WATCHDOG)
+extern int s3c2410wdt_set_emergency_reset(unsigned int timeout_cnt, int index);
+#endif
+
 #if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 #include <soc/samsung/debug-snapshot.h>
 #endif

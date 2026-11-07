@@ -14,9 +14,6 @@
 #include "is-hw-control.h"
 #include "is-interface-ddk.h"
 
-#define MIN(a,b) (((a) < (b)) ? (a) : (b))
-#define MAX(a,b) (((a) > (b)) ? (a) : (b))
-
 enum sram_config_type {
 	SRAM_CFG_N = 0,
 	SRAM_CFG_R,

@@ -46,9 +46,6 @@
 
 #define	INVALID_LASER_DISTANCE	0
 
-#define MIN(a,b) (((a) < (b)) ? (a) : (b))
-#define MAX(a,b) (((a) > (b)) ? (a) : (b))
-
 #define FPS_TO_DURATION_US(x)  ((x == 0) ? (0) : ((1000 * 1000) / x))
 #define DURATION_US_TO_FPS(x)  ((x == 0) ? (0) : ((1000 * 1000) / x))
 

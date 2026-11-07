@@ -1918,7 +1918,9 @@ void is_flush_ddk_thread(void)
 
 void is_lib_flush_task_handler(int priority)
 {
+#if !defined(LOCAL_FPSIMD_API)
 	struct is_lib_support *lib = &gPtr_lib_support;
+#endif
 	int task_index = priority - TASK_PRIORITY_BASE - 1;
 
 	dbg_lib(3, "%s: task_index(%d), priority(%d)\n", __func__, task_index, priority);
@@ -2593,18 +2595,19 @@ int __nocfi is_load_ddk_bin(int loadType)
 	ulong lib_isp = DDK_LIB_ADDR;
 	ulong lib_vra __maybe_unused = VRA_LIB_ADDR;
 
-#ifdef USE_ONE_BINARY
-	bin_size = VRA_LIB_SIZE + DDK_LIB_SIZE;
-#else
-	bin_size = DDK_LIB_SIZE;
-#endif
-
 #if !IS_ENABLED(CONFIG_DISABLE_CAMERA_MEM_ATTR)
 	struct is_memory_attribute memory_attribute[] = {
 		{__pgprot(PTE_RDONLY), PFN_UP(LIB_VRA_CODE_SIZE), lib_vra},
 		{__pgprot(PTE_RDONLY), PFN_UP(LIB_ISP_CODE_SIZE), lib_isp}
 	};
 #endif
+
+#ifdef USE_ONE_BINARY
+	bin_size = VRA_LIB_SIZE + DDK_LIB_SIZE;
+#else
+	bin_size = DDK_LIB_SIZE;
+#endif
+
 #if defined(ENABLE_DYNAMIC_HEAP_FOR_DDK_RTA)
 	struct is_core *core = (struct is_core *)dev_get_drvdata(device);
 	struct is_minfo *minfo = &core->resourcemgr.minfo;
@@ -2662,7 +2665,7 @@ int __nocfi is_load_ddk_bin(int loadType)
 		if (bin.size <= bin_size) {
 			memcpy((void *)lib_addr, bin.data, bin.size);
 #if !defined(MODULE)
-			__flush_dcache_area((void *)lib_addr, bin.size);
+			__flush_dcache_area(lib_addr, bin.size);
 #endif
 		} else {
 			err_lib("DDK bin size is bigger than memory area. %zd[%zd]",
@@ -2694,7 +2697,7 @@ int __nocfi is_load_ddk_bin(int loadType)
 				bin.data + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
 				CAMERA_BINARY_VRA_DATA_SIZE);
 #if !defined(MODULE)
-			__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
+			__flush_dcache_area(lib_addr + CAMERA_BINARY_VRA_DATA_OFFSET + CDH_SIZE,
 								CAMERA_BINARY_VRA_DATA_SIZE);
 #endif
 			info_lib("binary info 3[%s] - type: D, from: %s\n",
@@ -2704,7 +2707,7 @@ int __nocfi is_load_ddk_bin(int loadType)
 				bin.data + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
 				(bin.size - CAMERA_BINARY_DDK_DATA_OFFSET - CDH_SIZE));
 #if !defined(MODULE)
-			__flush_dcache_area((void *)lib_addr + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
+			__flush_dcache_area(lib_addr + CAMERA_BINARY_DDK_DATA_OFFSET + CDH_SIZE,
 								bin.size - CAMERA_BINARY_DDK_DATA_OFFSET - CDH_SIZE);
 #endif
 		} else {
@@ -2805,7 +2808,7 @@ int __nocfi is_load_vra_bin(int loadType)
 		goto fail;
 	}
 #if !defined(MODULE)
-	__flush_dcache_area((void *)lib_vra, bin.size);
+	__flush_dcache_area((unsigned long)lib_vra, bin.size);
 #endif
 	flush_icache_range(lib_vra, bin.size);
 
@@ -2875,7 +2878,7 @@ int __nocfi is_load_rta_bin(int loadType)
 		if (bin.size <= RTA_LIB_SIZE) {
 			memcpy((void *)lib_rta, bin.data, bin.size);
 #if !defined(MODULE)
-			__flush_dcache_area((void *)lib_rta, bin.size);
+			__flush_dcache_area((unsigned long)lib_rta, bin.size);
 #endif
 		} else {
 			err_lib("RTA bin size is bigger than memory area. %d[%d]",
@@ -2899,7 +2902,7 @@ int __nocfi is_load_rta_bin(int loadType)
 				bin.data + CAMERA_BINARY_RTA_DATA_OFFSET,
 				bin.size - CAMERA_BINARY_RTA_DATA_OFFSET);
 #if !defined(MODULE)
-			__flush_dcache_area((void *)lib_rta + CAMERA_BINARY_RTA_DATA_OFFSET,
+			__flush_dcache_area(lib_rta + CAMERA_BINARY_RTA_DATA_OFFSET,
 								bin.size - CAMERA_BINARY_RTA_DATA_OFFSET);
 #endif
 		} else {
