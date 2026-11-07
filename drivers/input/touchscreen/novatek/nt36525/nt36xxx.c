@@ -24,9 +24,6 @@
 #include <linux/input/mt.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#if SEC_DEXPAD
-#include <linux/input/mt.h>
-#endif
 
 #if defined(CONFIG_FB)
 #ifdef CONFIG_DRM_MSM
