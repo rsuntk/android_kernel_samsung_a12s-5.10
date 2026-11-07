@@ -1963,7 +1963,7 @@ static int a96t3x6_load_fw(struct a96t3x6_data *data, u8 cmd)
 			goto fail_sdcard_kzalloc;
 		}
 
-		nread = kernel_read(fp, data->firm_data_ums, fsize, &pos);
+		nread = kernel_read(fp, (void *)data->firm_data_ums, fsize, &pos);
 		if (nread != fsize) {
 			GRIP_ERR("fail to kernel_read file\n");
 			ret = -EINVAL;
