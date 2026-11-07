@@ -367,14 +367,6 @@ static int contexthub_imgloader_verify_fw(struct imgloader_desc *desc,
 	}
 	return 0;
 }
-#else
-static int contexthub_imgloader_verify_fw(struct imgloader_desc *desc,
-						 phys_addr_t fw_phys_base,
-						 size_t fw_bin_size,
-						 size_t fw_mem_size)
-{
-	return 0;
-}
 #endif
 
 #if IS_ENABLED(CONFIG_EXYNOS_IMGLOADER)
