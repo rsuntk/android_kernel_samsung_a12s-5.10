@@ -614,7 +614,7 @@ void is_sensor_long_term_mode_set_work(struct work_struct *data);
 int is_sensor_mode_change(struct is_cis *cis, u32 mode);
 void is_sensor_peri_init_work(struct is_device_sensor_peri *sensor_peri);
 
-#define CALL_CISOPS(s, op, args...) (((s)->cis_ops->op) ? ((s)->cis_ops->op(args)) : 0)
+#define CALL_CISOPS(s, op, args...) (((s)->cis_ops && (s)->cis_ops->op) ? ((s)->cis_ops->op(args)) : 0)
 #define CALL_OISOPS(s, op, args...) (((s)->ois_ops->op) ? ((s)->ois_ops->op(args)) : 0)
 #define CALL_ACTUATOROPS(s, op, args...) (((s)->actuator_ops->op) ? ((s)->actuator_ops->op(args)) : 0)
 #define CALL_APERTUREOPS(s, op, args...) (((s)->aperture_ops->op) ? ((s)->aperture_ops->op(args)) : 0)
