@@ -2479,6 +2479,7 @@ int cis_gc5035_probe(struct i2c_client *client,
 	probe_info("%s f-number %d\n", __func__, cis->aperture_num);
 
 	cis->use_dgain = false;
+	cis->use_total_gain = true;
 	cis->hdr_ctrl_by_again = false;
 
 	cis->use_initial_ae = of_property_read_bool(dnode, "use_initial_ae");
