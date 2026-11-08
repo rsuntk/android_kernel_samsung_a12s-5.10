@@ -282,10 +282,18 @@ void is_fpsimd_put_task(struct is_fpsimd_task *t)
 
 static void is_fpsimd_notifier_on(void)
 {
+	static DEFINE_MUTEX(notifier_lock);
 	static atomic_t notifier_on = ATOMIC_INIT(0);
 
-	if (!atomic_xchg(&notifier_on, 1))
+	if (atomic_read_acquire(&notifier_on))
+		return;
+
+	mutex_lock(&notifier_lock);
+	if (!atomic_read(&notifier_on)) {
 		preempt_notifier_inc();
+		atomic_set_release(&notifier_on, 1);
+	}
+	mutex_unlock(&notifier_lock);
 }
 
 void is_fpsimd_set_task_using(struct task_struct *t)
