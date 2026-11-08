@@ -728,10 +728,16 @@ static int make_list(struct device *dev, struct list_head *lh, const char *name)
 	}
 
 	count /= 2;
+	pr_info("%s: count is %d\n", __func__, count);
 
 	for (i = 0; i < count; i++) {
+		type = NULL;
+		subinfo = NULL;
+
 		of_property_read_string_index(np, "type", i * 2, &type);
 		of_property_read_string_index(np, "type", i * 2 + 1, &subinfo);
+
+		pr_info("%s: type: %s, subinfo: %s\n", __func__, type, subinfo);
 
 		if (skip_list(name, type)) {
 			dbg_info("lcdtype(%d) is invalid, so skip to add %s: %2d: %s\n", get_boot_lcdtype(), name, count, type);
@@ -753,6 +759,7 @@ static int make_list(struct device *dev, struct list_head *lh, const char *name)
 			of_property_read_string_index(np, "desc", i, &action->desc);
 
 		list_add_tail(&action->node, lh);
+		action = NULL;
 	}
 
 	if (ret < 0) {
