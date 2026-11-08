@@ -137,8 +137,6 @@ static bool is_fpsimd_get_func_task(void)
 	 * worse than waiting for a small allocation.
 	 */
 	ctx = kmalloc(sizeof(*ctx), GFP_KERNEL | __GFP_NOFAIL);
-	if (!ctx)
-		return false;
 
 	ctx->task = current;
 	ctx->depth = 1;
