@@ -24,7 +24,7 @@
 #include "is-device-sensor-peri.h"
 #include "is-core.h"
 
-#ifdef CONFIG_LEDS_SM5714
+#if IS_ENABLED(CONFIG_LEDS_SM5714)
 #include <linux/sm5714.h>
 extern int32_t sm5714_fled_mode_ctrl(int state, uint32_t brightness);
 #endif
@@ -68,7 +68,7 @@ static int sensor_sm5714_flash_control(struct v4l2_subdev *subdev, enum flash_mo
 		mode == CAM2_FLASH_MODE_SINGLE ? "FLASH" : "TORCH",
 		intensity);
 
-#ifdef CONFIG_LEDS_SM5714
+#if IS_ENABLED(CONFIG_LEDS_SM5714)
 	if (mode == CAM2_FLASH_MODE_OFF) {
 		ret = sm5714_fled_mode_ctrl(SM5714_FLED_MODE_OFF, 0);
 		if (ret)
@@ -76,7 +76,7 @@ static int sensor_sm5714_flash_control(struct v4l2_subdev *subdev, enum flash_mo
 	} else if (mode == CAM2_FLASH_MODE_SINGLE) {
 		ret = sm5714_fled_mode_ctrl(SM5714_FLED_MODE_MAIN_FLASH, 0);
 		if (ret)
-			err("%s capture flash on fail",__func__);
+			err("%s capture flash on fail", __func__);
 	} else if (mode == CAM2_FLASH_MODE_TORCH) {
 		ret = sm5714_fled_mode_ctrl(SM5714_FLED_MODE_PRE_FLASH, 0);
 		if (ret)
@@ -145,7 +145,7 @@ int flash_sm5714_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control *ctrl)
 		flash->flash_data.firing_time_us = ctrl->value;
 		break;
 	case V4L2_CID_FLASH_SET_FIRE:
-		ret =  sensor_sm5714_flash_control(subdev, flash->flash_data.mode, ctrl->value);
+		ret = sensor_sm5714_flash_control(subdev, flash->flash_data.mode, ctrl->value);
 		if (ret) {
 			err("sensor_sm5714_flash_control(mode:%d, val:%d) is fail(%d)",
 					(int)flash->flash_data.mode, ctrl->value, ret);
@@ -176,6 +176,8 @@ long flash_sm5714_ioctl(struct v4l2_subdev *subdev, unsigned int cmd, void *arg)
 			goto p_err;
 		}
 		break;
+	case SENSOR_IOCTL_FLS_G_CTRL:
+		break;
 	default:
 		err("err!!! Unknown command(%#x)", cmd);
 		ret = -EINVAL;
@@ -194,7 +196,7 @@ static const struct v4l2_subdev_ops subdev_ops = {
 	.core = &core_ops,
 };
 
-static int __init flash_sm5714_probe(struct device *dev, struct i2c_client *client)
+static int flash_sm5714_probe(struct device *dev, struct i2c_client *client)
 {
 	int ret = 0;
 	struct is_core *core;
@@ -207,13 +209,12 @@ static int __init flash_sm5714_probe(struct device *dev, struct i2c_client *clie
 	u32 sensor_id[IS_SENSOR_COUNT];
 	int i;
 
-	FIMC_BUG(!is_dev);
 	FIMC_BUG(!dev);
 
 	probe_info("%s start\n", __func__);
 	dnode = dev->of_node;
 
-	core = (struct is_core *)dev_get_drvdata(is_dev);
+	core = is_get_is_core();
 	if (!core) {
 		probe_info("core device is not yet probed");
 		ret = -EPROBE_DEFER;
@@ -266,7 +267,7 @@ static int __init flash_sm5714_probe(struct device *dev, struct i2c_client *clie
 
 		flash[i].flash_gpio = of_get_named_gpio(dnode, "flash-gpio", 0);
 		if (!gpio_is_valid(flash[i].flash_gpio)) {
-			dev_err(dev, "failed to get PIN_RESET\n");
+			dev_err(dev, "failed to get FLASH_GPIO\n");
 			kfree(flash);
 			kfree(subdev_flash);
 			return -EINVAL;
@@ -277,7 +278,7 @@ static int __init flash_sm5714_probe(struct device *dev, struct i2c_client *clie
 
 		flash[i].torch_gpio = of_get_named_gpio(dnode, "torch-gpio", 0);
 		if (!gpio_is_valid(flash[i].torch_gpio)) {
-			dev_err(dev, "failed to get PIN_RESET\n");
+			dev_err(dev, "failed to get TORCH_GPIO\n");
 			kfree(flash);
 			kfree(subdev_flash);
 			return -EINVAL;
@@ -311,7 +312,7 @@ p_err:
 	return ret;
 }
 
-static int __init flash_sm5714_platform_probe(struct platform_device *pdev)
+static int flash_sm5714_platform_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct device *dev;
