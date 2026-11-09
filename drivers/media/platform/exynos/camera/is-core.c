@@ -200,6 +200,9 @@ static struct notifier_block exynos_is_mif_throttling_nb = {
 
 static int is_suspend(struct device *dev)
 {
+	/* the "sleep" state holds the torch pin level (pin-con-pdn PREV) across suspend */
+	pinctrl_pm_select_sleep_state(dev);
+
 	pr_debug("FIMC_IS Suspend\n");
 	return 0;
 }
