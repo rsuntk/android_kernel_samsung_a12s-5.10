@@ -196,7 +196,7 @@ int bts_update_bw(unsigned int index, struct bts_bw bw)
 		return -EINVAL;
 	}
 
-	mutex_lock(&btsdev->mutex_lock);
+	rt_mutex_lock(&btsdev->mutex_lock);
 
 	BTSDBG_LOG(btsdev->dev, "%s: %s(%u), R: %.8u W: %.8u P: %.8u\n", __func__,
 			btsdev->bts_bw[index].name, index, bw.read, bw.write, bw.peak);
@@ -207,7 +207,7 @@ int bts_update_bw(unsigned int index, struct bts_bw bw)
 
 	bts_calc_bw();
 
-	mutex_unlock(&btsdev->mutex_lock);
+	rt_mutex_unlock(&btsdev->mutex_lock);
 
 	return 0;
 }
@@ -2537,7 +2537,7 @@ static int bts_probe(struct platform_device *pdev)
 			return ret;
 		}
 		spin_lock_init(&btsdev->lock);
-		mutex_init(&btsdev->mutex_lock);
+		rt_mutex_init(&btsdev->mutex_lock);
 		INIT_LIST_HEAD(&btsdev->scen_node);
 
 		ret = bts_initialize(btsdev);
