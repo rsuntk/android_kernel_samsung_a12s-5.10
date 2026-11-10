@@ -653,6 +653,7 @@ int zeroflash_remove(struct syna_tcm_hcd *tcm_hcd);
 int syna_tcm_power_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 int syna_tcm_reset_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 void touch_free_objects(void);
+void touch_reset_proximity(void);
 
 static inline int syna_tcm_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
