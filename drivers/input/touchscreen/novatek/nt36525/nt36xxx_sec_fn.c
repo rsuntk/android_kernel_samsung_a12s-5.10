@@ -2103,6 +2103,8 @@ int set_ear_detect(struct nvt_ts_data *ts, int mode, bool print_log)
 	else
 		subcmd = 0; //don't care this value  when the mode == PROXIMITY_LEAVE
 
+	if (mode && ts->input_dev_proximity)
+		ts->input_dev_proximity->absinfo[ABS_MT_CUSTOM].value = -1;
 
 	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = reg;
