@@ -285,7 +285,7 @@ static ssize_t ilitek_proc_get_delta_data_read(struct file *pFile, char __user *
 	for (i = 4, index = 0; i < row * col * 2 + 4; i += 2, index++)
 		delta[index] = (data[i] << 8) + data[i + 1];
 
-	len = snprintf(g_user_buf + size, PAGE_SIZE - len, "======== Deltadata ========\n");
+	len = snprintf(g_user_buf, PAGE_SIZE, "======== Deltadata ========\n");
 	input_info(true, ilits->dev, "%s ======== Deltadata ========\n", __func__);
 
 	len += snprintf(g_user_buf + len, PAGE_SIZE - len,
@@ -529,7 +529,7 @@ static ssize_t ilitek_proc_rw_tp_reg_write(struct file *filp, const char *buff, 
 	char cmd[256] = { 0 };
 	u32 count = 0;
 
-	if ((size - 1) > sizeof(cmd)) {
+	if (size == 0 || size > sizeof(cmd)) {
 		input_err(true, ilits->dev, "%s ERROR! input length is larger than local buffer\n", __func__);
 		return -1;
 	}
@@ -544,7 +544,7 @@ static ssize_t ilitek_proc_rw_tp_reg_write(struct file *filp, const char *buff, 
 		}
 	}
 	token = cur = cmd;
-	while ((token = strsep(&cur, ",")) != NULL) {
+	while (count < ARRAY_SIZE(rw_reg) && (token = strsep(&cur, ",")) != NULL) {
 		rw_reg[count] = ili_str2hex(token);
 		input_info(true, ilits->dev, "%s rw_reg[%d] = 0x%x\n", __func__, count, rw_reg[count]);
 		count++;
@@ -1355,7 +1355,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	u8 temp[256] = {0};
 	u32 *data = NULL;
 
-	if ((size - 1) > sizeof(cmd)) {
+	if (size == 0 || size > sizeof(cmd)) {
 		input_err(true, ilits->dev, "%s ERROR! input length is larger than local buffer\n", __func__);
 		return -1;
 	}
@@ -1502,7 +1502,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "iow", strlen(cmd)) == 0) {
 		int w_len = 0;
 
-		w_len = data[1];
+		w_len = min_t(u32, data[1], sizeof(temp));
 		input_info(true, ilits->dev, "%s w_len = %d\n", __func__, w_len);
 		for (i = 0; i < w_len; i++) {
 			temp[i] = data[2 + i];
@@ -1513,7 +1513,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "ior", strlen(cmd)) == 0) {
 		int r_len = 0;
 
-		r_len = data[1];
+		r_len = min_t(u32, data[1], sizeof(temp));
 		input_info(true, ilits->dev, "%s r_len = %d\n", __func__, r_len);
 		ilits->wrapper(NULL, 0, temp, r_len, ON, OFF);
 		for (i = 0; i < r_len; i++)
@@ -1522,8 +1522,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int delay = 0;
 		int w_len = 0, r_len = 0;
 
-		w_len = data[1];
-		r_len = data[2];
+		w_len = min_t(u32, data[1], sizeof(temp));
+		r_len = min_t(u32, data[2], sizeof(temp));
 		delay = data[3];
 		input_info(true, ilits->dev, "%s w_len = %d, r_len = %d, delay = %d\n", __func__, w_len, r_len, delay);
 
@@ -1541,8 +1541,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int delay = 0;
 		int w_len = 0, r_len = 0;
 
-		w_len = data[1];
-		r_len = data[2];
+		w_len = min_t(u32, data[1], sizeof(temp));
+		r_len = min_t(u32, data[2], sizeof(temp));
 		delay = data[3];
 		input_info(true, ilits->dev, "%s w_len = %d, r_len = %d, delay = %d\n", __func__, w_len, r_len, delay);
 		for (i = 0; i < w_len; i++) {
@@ -1589,7 +1589,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "spiw", strlen(cmd)) == 0) {
 		int wlen;
 
-		wlen = data[1];
+		wlen = min_t(u32, data[1], sizeof(temp));
 		temp[0] = 0x82;
 		for (i = 0; i < wlen; i++) {
 			temp[i] = data[2 + i];
@@ -1600,7 +1600,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int rlen;
 		u8 *rbuf = NULL;
 
-		rlen = data[1];
+		rlen = min_t(u32, data[1], PAGE_SIZE);
 		rbuf = kzalloc(rlen, GFP_KERNEL | GFP_DMA);
 		if (ERR_ALLOC_MEM(rbuf)) {
 			input_err(true, ilits->dev, "%s Failed to allocate dma_rxbuf, %ld\n", __func__, PTR_ERR(rbuf));
@@ -1616,8 +1616,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int wlen, rlen;
 		u8 *rbuf = NULL;
 
-		wlen = data[1];
-		rlen = data[2];
+		wlen = min_t(u32, data[1], sizeof(temp));
+		rlen = min_t(u32, data[2], PAGE_SIZE);
 		for (i = 0; i < wlen; i++) {
 			temp[i] = data[3 + i];
 			input_info(true, ilits->dev, "%s write[%d] = %x\n", __func__, i, temp[i]);

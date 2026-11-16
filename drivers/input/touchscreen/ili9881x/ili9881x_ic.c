@@ -920,8 +920,8 @@ int ili_ic_get_panel_info(void)
 	}
 
 	cmd = P5_X_GET_LP_DUMP_STATUE;
-	ilits->wrapper(&cmd, sizeof(cmd), buf, 8, ON, OFF);
-	if (ret < 0)
+	memset(buf, 0, sizeof(buf));
+	if (ilits->wrapper(&cmd, sizeof(cmd), buf, 8, ON, OFF) < 0)
 		input_err(true, ilits->dev, "Read lp dump status error\n");
 
 	if (buf[0] != cmd)
@@ -1192,12 +1192,15 @@ void ili_ic_lpwg_get(void)
 	ili_irq_enable();
 	if (ilits->wrapper(cmd, 3, rxbuf, 112, ON, OFF) < 0) {
 		input_err(true, ilits->dev, "get LPWG info failed\n");
+		ili_irq_disable();
 		return;
 	}
 	ili_irq_disable();
 
 	/* number of event */
 	num_event = rxbuf[5];
+	if (num_event > (sizeof(rxbuf) - offset) / 5)
+		num_event = (sizeof(rxbuf) - offset) / 5;
 	input_info(true, ilits->dev, "LPWG event number = %d\n", num_event);
 
 	for (i = 0; i < num_event; i++) {

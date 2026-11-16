@@ -1114,8 +1114,12 @@ int ili_reset_ctrl(int mode)
 
 static void ili_read_info_work(struct work_struct *work)
 {
+	static int retry;
+
 	if (atomic_read(&ilits->fw_stat) != END) {
 		input_err(true, ilits->dev, "%s: fw update didn't finish yet.\n", __func__);
+		if (retry++ < 50)
+			schedule_delayed_work(&ilits->work_read_info, msecs_to_jiffies(300));
 		return;
 	} else {
 		input_info(true, ilits->dev, "%s: fw update finished.\n", __func__);
@@ -1166,6 +1170,7 @@ int ili_tddi_init(void)
 #if IS_ENABLED(CONFIG_FB)
 	INIT_WORK(&ilits->fb_resume_work, ilitek_fb_resume_work);
 #endif
+	INIT_DELAYED_WORK(&ilits->work_read_info, ili_read_info_work);
 
 	/* Must do hw reset once in first time for work normally if tp reset is avaliable */
 #if !TDDI_RST_BIND
@@ -1239,7 +1244,6 @@ int ili_tddi_init(void)
 	if (!ilits->ws)
 		input_err(true, ilits->dev, "%s wakeup source request failed\n", __func__);
 
-	INIT_DELAYED_WORK(&ilits->work_read_info, ili_read_info_work);
 	schedule_delayed_work(&ilits->work_read_info, msecs_to_jiffies(300));
 
 	return 0;

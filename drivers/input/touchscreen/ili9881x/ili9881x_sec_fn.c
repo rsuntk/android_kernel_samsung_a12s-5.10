@@ -478,7 +478,8 @@ static void run_raw_test_read(void *device_data)
 	input_raw_info(true, ilits->dev, "%s: %s\n", __func__, ilits->print_buf);
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -524,7 +525,8 @@ static void run_raw_test_read_all(void *device_data)
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -560,7 +562,8 @@ static void run_raw_doze_test_read(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE");
 	}
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -600,7 +603,8 @@ static void run_raw_doze_test_read_all(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -637,7 +641,8 @@ static void run_cal_dac_test_read(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "CAL_DAC");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 
 	input_raw_info(true, ilits->dev, "%s: %s\n", __func__, ilits->print_buf);
 	return;
@@ -674,7 +679,8 @@ static void run_cal_dac_test_read_all(void *device_data)
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -711,7 +717,8 @@ static void run_open_test_read(void *device_data)
 	input_raw_info(true, ilits->dev, "%s: %s\n", __func__, ilits->print_buf);
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -748,7 +755,8 @@ static void run_open_test_read_all(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "OPEN");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -785,7 +793,8 @@ static void run_short_test_read(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "SHORT");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 
 	input_raw_info(true, ilits->dev, "%s: %s\n", __func__, ilits->print_buf);
 	return;
@@ -824,7 +833,8 @@ static void run_short_test_read_all(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "SHORT");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 
 	return;
 out:
@@ -900,7 +910,8 @@ static void run_noise_test_read_all(void *device_data)
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -937,7 +948,8 @@ static void run_noise_doze_test_read(void *device_data)
 	}
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -976,7 +988,8 @@ static void run_noise_doze_test_read_all(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "NOISE_DOZE");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1013,7 +1026,8 @@ static void run_noise_test_read_lcdoff(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "NOISE_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1048,7 +1062,8 @@ static void run_noise_test_read_all_lcdoff(void *device_data)
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1084,7 +1099,8 @@ static void run_noise_doze_test_read_lcdoff(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "NOISE_DOZE_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1122,7 +1138,8 @@ static void run_noise_doze_test_read_all_lcdoff(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "NOISE_DOZE_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1157,17 +1174,18 @@ static void run_raw_doze_test_read_lcdoff(void *device_data)
 	}
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, buff, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
+		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
 	snprintf(buff, sizeof(buff), "%s", "NG");
 	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, buff, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
+		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
 }
 
 static void run_raw_doze_test_read_all_lcdoff(void *device_data)
@@ -1198,14 +1216,15 @@ static void run_raw_doze_test_read_all_lcdoff(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
 	snprintf(buff, sizeof(buff), "%s", "NG");
 	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
-		sec_cmd_set_cmd_result_all(sec, buff, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
+		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_DOZE_OFF");
 }
 
 static void run_raw_test_read_lcdoff(void *device_data)
@@ -1244,7 +1263,8 @@ static void run_raw_test_read_lcdoff(void *device_data)
 		sec_cmd_set_cmd_result_all(sec, ilits->print_buf, SEC_CMD_STR_LEN, "RAW_OFF");
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -1288,7 +1308,8 @@ static void run_raw_test_read_all_lcdoff(void *device_data)
 	sec_cmd_set_cmd_result(sec, ilits->print_buf, strlen(ilits->print_buf));
 
 	ilits->current_mpitem = "";
-	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (ret >= 0)
+		sec->cmd_state = SEC_CMD_STATUS_OK;
 	return;
 out:
 	sec->cmd_state = SEC_CMD_STATUS_FAIL;
