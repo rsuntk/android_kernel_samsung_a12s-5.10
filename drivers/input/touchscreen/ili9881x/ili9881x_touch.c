@@ -244,7 +244,7 @@ static void dma_trigger_reg_setting(u32 reg_dest_addr, u32 flash_start_addr, u32
 	if (ili_ice_mode_write(FLASH0_reg_flash_csb, 0x1, 1) < 0)
 		input_err(true, ilits->dev, "%s Pull CS High failed\n", __func__);
 	/* waiting for CS status done */
-	mdelay(10);
+	usleep_range(10 * 1000, 10 * 1000);
 }
 
 int ili_move_mp_code_flash(void)
@@ -316,13 +316,13 @@ int ili_move_mp_code_flash(void)
 		if (ili_ice_mode_write(FLASH4_reg_rcv_data, 0xFF, 1) < 0)
 			input_err(true, ilits->dev, "%s Trigger DMA failed\n", __func__);
 		/* waiting for fw reload code completed. */
-		mdelay(30);
+		msleep(30);
 
 		/* CS High */
 		if (ili_ice_mode_write(FLASH0_reg_flash_csb, 0x1, 1) < 0)
 			input_err(true, ilits->dev, "%s Pull CS High failed\n", __func__);
 		/* waiting for CS status done */
-		mdelay(10);
+		usleep_range(10 * 1000, 10 * 1000);
 	}
 
 	if (ili_reset_ctrl(TP_IC_CODE_RST) < 0)
@@ -381,7 +381,7 @@ int ili_proximity_far(int mode)
 	u8 cmd[2] = {0};
 
 	if (!ilits->prox_near) {
-		input_info(true, ilits->dev, "%s No proximity near event, break\n", __func__, __func__);
+		input_info(true, ilits->dev, "%s No proximity near event, break\n", __func__);
 		return 0;
 	}
 
@@ -408,7 +408,7 @@ int ili_proximity_far(int mode)
 			break;
 		}
 
-		ret = ili_switch_tp_mode(P5_X_FW_GESTURE_MODE);
+		ret = ili_set_tp_data_len(ilits->gesture_mode, true, NULL);
 		if (ret < 0)
 			input_err(true, ilits->dev, "%s Switch to gesture mode failed during proximity far\n",
 					__func__);
@@ -490,7 +490,7 @@ void ili_set_gesture_symbol(void)
 
 int ili_move_gesture_code_iram(int mode)
 {
-	int i, ret = 0, timeout = 10;
+	int i, ret = 0, timeout = 100;
 	u8 cmd[2] = {0};
 	u8 cmd_write[3] = {0x01, 0x0A, 0x05};
 
@@ -547,6 +547,7 @@ int ili_move_gesture_code_iram(int mode)
 			input_info(true, ilits->dev, "%s Ready to load gesture code\n", __func__);
 			break;
 		}
+		usleep_range(2 * 1000, 2 * 1000);
 	}
 	ili_irq_disable();
 
@@ -555,6 +556,8 @@ int ili_move_gesture_code_iram(int mode)
 				__func__, cmd[0]);
 		return ili_gesture_recovery();
 	}
+
+	input_info(true, ilits->dev, "%s : Gesture is ready for fw update (%d)\n", __func__, timeout);
 
 	ret = ili_fw_upgrade_handler(NULL);
 	if (ret < 0) {
@@ -641,7 +644,7 @@ int ili_touch_esd_gesture_flash(void)
 		if (answer != ges_run)
 			input_info(true, ilits->dev, "%s ret = 0x%X, answer = 0x%X\n", __func__, answer, ges_run);
 
-		mdelay(2);
+		usleep_range(2 * 1000, 2 * 1000);
 	} while (answer != ges_run && --retry > 0);
 
 	if (retry <= 0) {
@@ -681,6 +684,10 @@ int ili_touch_esd_gesture_iram(void)
 	int ges_pwd = ESD_GESTURE_CORE146_PWD;
 	int ges_run = SPI_ESD_GESTURE_CORE146_RUN;
 	int pwd_len = 2;
+
+	if (!ilits->gesture_load_code) {
+		ges_run = I2C_ESD_GESTURE_CORE146_RUN;
+	}
 
 	if (ilits->chip->core_ver < CORE_VER_1460) {
 		if (ilits->chip->core_ver >= CORE_VER_1420)
@@ -738,7 +745,7 @@ int ili_touch_esd_gesture_iram(void)
 		if (answer != ges_run)
 			input_info(true, ilits->dev, "%s ret = 0x%X, answer = 0x%X\n", __func__, answer, ges_run);
 
-		mdelay(2);
+		usleep_range(2 * 1000, 2 * 1000);
 	} while (answer != ges_run && --retry > 0);
 
 	if (retry <= 0) {
@@ -859,7 +866,7 @@ void ili_demo_debug_info_mode(u8 *buf, size_t len)
 	ilits->demo_debug_info[info_id](&info_ptr[1], info_len);
 }
 
-static void ilitek_tddi_touch_send_debug_data(u8 *buf, int len)
+void ilitek_tddi_touch_send_debug_data(u8 *buf, int len)
 {
 	int index;
 
@@ -1200,7 +1207,6 @@ void ili_report_ap_mode(u8 *buf, int len)
 			ilits->last_touch = 0;
 		}
 	}
-	ilitek_tddi_touch_send_debug_data(buf, len);
 }
 
 void ili_debug_mode_report_point(u8 *buf, int len)
@@ -1393,34 +1399,55 @@ int ili_incell_power_control(int onoff)
 		return 0;
 
 	if (!ilits->lcd_bl_en || !ilits->lcd_vddi || !ilits->lcd_rst) {
-		input_err(true, ilits->dev, "%s: not support incell power contorl\n", __func__, ret);
+		input_err(true, ilits->dev, "%s: not support incell power contorl\n", __func__);
 		return -1;
 	}
 	if (onoff) {
-		ret = regulator_enable(ilits->lcd_bl_en);
-		if (ret) {
-			input_err(true, ilits->dev, "%s: Failed to lcd_bl_en %d\n", __func__, ret);
-			regulator_disable(ilits->lcd_bl_en);
+		if (ilits->lcd_bl_en) {
+			ret = regulator_enable(ilits->lcd_bl_en);
+			if (ret) {
+				input_err(true, ilits->dev, "%s: Failed to lcd_bl_en %d\n", __func__, ret);
+				regulator_disable(ilits->lcd_bl_en);
+			}
 		}
 
-		ret = regulator_enable(ilits->lcd_vddi);
-		if (ret) {
-			input_err(true, ilits->dev, "%s: Failed to lcd_vddi %d\n", __func__, ret);
-			regulator_disable(ilits->lcd_vddi);
+		if (ilits->lcd_vddi) {
+			ret = regulator_enable(ilits->lcd_vddi);
+			if (ret) {
+				input_err(true, ilits->dev, "%s: Failed to lcd_vddi %d\n", __func__, ret);
+				regulator_disable(ilits->lcd_vddi);
+			}
 		}
-
-		ret = regulator_enable(ilits->lcd_rst);
-		if (ret) {
-			input_err(true, ilits->dev, "%s: Failed to lcd_rst %d\n", __func__, ret);
-			regulator_disable(ilits->lcd_rst);
+		if (ilits->lcd_rst) {
+			ret = regulator_enable(ilits->lcd_rst);
+			if (ret) {
+				input_err(true, ilits->dev, "%s: Failed to lcd_rst %d\n", __func__, ret);
+				regulator_disable(ilits->lcd_rst);
+			}
+		}
+		if (ilits->lcd_vsp) {
+			ret = regulator_enable(ilits->lcd_vsp);
+			if (ret) {
+				input_err(true, ilits->dev, "%s: Failed to lcd_vsp %d\n", __func__, ret);
+				regulator_disable(ilits->lcd_vsp);
+			}
+		}
+		if (ilits->lcd_vsn) {
+			ret = regulator_enable(ilits->lcd_vsn);
+			if (ret) {
+				input_err(true, ilits->dev, "%s: Failed to lcd_vsn %d\n", __func__, ret);
+				regulator_disable(ilits->lcd_vsn);
+			}
 		}
 	} else {
-		if (regulator_is_enabled(ilits->lcd_rst)) {
-			ret = regulator_disable(ilits->lcd_rst);
-			if (ret)
-				input_err(true, ilits->dev, "%s: failed to disable lcd_rst: %d\n", __func__, ret);
-		} else {
-			input_err(true, ilits->dev, "%s: lcd_rst is already disabled\n", __func__);
+		if (ilits->lcd_rst) {
+			if (regulator_is_enabled(ilits->lcd_rst)) {
+				ret = regulator_disable(ilits->lcd_rst);
+				if (ret)
+					input_err(true, ilits->dev, "%s: failed to disable lcd_rst: %d\n", __func__, ret);
+			} else {
+				input_err(true, ilits->dev, "%s: lcd_rst is already disabled\n", __func__);
+			}
 		}
 
 		if (ilits->chip->id == ILI7807_CHIP) {
@@ -1429,20 +1456,53 @@ int ili_incell_power_control(int onoff)
 			usleep_range(ilits->lcd_rst_delay * 1000, ilits->lcd_rst_delay * 1000);
 		}
 
-		if (regulator_is_enabled(ilits->lcd_bl_en)) {
-			ret = regulator_disable(ilits->lcd_bl_en);
-			if (ret)
-				input_err(true, ilits->dev, "%s: failed to disable lcd_bl_en: %d\n", __func__, ret);
-		} else {
-			input_err(true, ilits->dev, "%s: lcd_bl_en is already disabled\n", __func__);
+		if (ilits->lcd_bl_en) {
+			if (regulator_is_enabled(ilits->lcd_bl_en)) {
+				ret = regulator_disable(ilits->lcd_bl_en);
+				if (ret)
+					input_err(true, ilits->dev, "%s: failed to disable lcd_bl_en: %d\n", __func__, ret);
+			} else {
+				input_err(true, ilits->dev, "%s: lcd_bl_en is already disabled\n", __func__);
+			}
 		}
 
-		if (regulator_is_enabled(ilits->lcd_vddi)) {
-			ret = regulator_disable(ilits->lcd_vddi);
-			if (ret)
-				input_err(true, ilits->dev, "%s: failed to disable lcd_vddi: %d\n", __func__, ret);
-		} else {
-			input_err(true, ilits->dev, "%s: lcd_vddi is already disabled\n", __func__);
+		if (ilits->chip->id == ILI9882_CHIP)
+			usleep_range(1500, 2000);
+
+		if (ilits->lcd_vsn) {
+			if (regulator_is_enabled(ilits->lcd_vsn)) {
+				ret = regulator_disable(ilits->lcd_vsn);
+				if (ret)
+					input_err(true, ilits->dev, "%s: failed to disable lcd_vsn: %d\n", __func__, ret);
+			} else {
+				input_err(true, ilits->dev, "%s: lcd_vsn is already disabled\n", __func__);
+			}
+		}
+
+		if (ilits->poweroff_discharging_us > 0)
+			usleep_range(ilits->poweroff_discharging_us, ilits->poweroff_discharging_us);
+
+		if (ilits->lcd_vsp) {
+			if (regulator_is_enabled(ilits->lcd_vsp)) {
+				ret = regulator_disable(ilits->lcd_vsp);
+				if (ret)
+					input_err(true, ilits->dev, "%s: failed to disable lcd_vsp: %d\n", __func__, ret);
+			} else {
+				input_err(true, ilits->dev, "%s: lcd_vsp is already disabled\n", __func__);
+			}
+		}
+
+		if (ilits->poweroff_discharging_us > 0)
+			usleep_range(ilits->poweroff_discharging_us, ilits->poweroff_discharging_us);
+
+		if (ilits->lcd_vddi) {
+			if (regulator_is_enabled(ilits->lcd_vddi)) {
+				ret = regulator_disable(ilits->lcd_vddi);
+				if (ret)
+					input_err(true, ilits->dev, "%s: failed to disable lcd_vddi: %d\n", __func__, ret);
+			} else {
+				input_err(true, ilits->dev, "%s: lcd_vddi is already disabled\n", __func__);
+			}
 		}
 	}
 	enabled = onoff;

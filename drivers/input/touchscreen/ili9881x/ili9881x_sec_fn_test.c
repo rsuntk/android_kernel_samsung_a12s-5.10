@@ -32,6 +32,7 @@ void sec_factory_print_frame(u32 *buf)
 	int lsize;
 	u32 data;
 	char temp[SEC_CMD_STR_LEN] = { 0 };
+	bool print_long_log = buf[0] > 100 ? true : false;
 
 	input_info(true, ilits->dev, "%s\n", __func__);
 
@@ -44,21 +45,27 @@ void sec_factory_print_frame(u32 *buf)
 	memset(temp, 0x00, SEC_CMD_STR_LEN);
 
 	memset(pStr, 0x0, lsize);
-	snprintf(pTmp, sizeof(pTmp), "      TX");
+	snprintf(pTmp, sizeof(pTmp), "     TX");
 	strlcat(pStr, pTmp, lsize);
 
 	for (i = 0; i < ilits->xch_num; i++) {
-		snprintf(pTmp, sizeof(pTmp), "%7d ", i);
+		if (print_long_log)
+			snprintf(pTmp, sizeof(pTmp), "%7d ", i);
+		else
+			snprintf(pTmp, sizeof(pTmp), "%3d ", i);
 		strlcat(pStr, pTmp, lsize);
 	}
 
 	input_raw_info(true, ilits->dev, "%s\n", pStr);
 	memset(pStr, 0x0, lsize);
-	snprintf(pTmp, sizeof(pTmp), " +");
+	snprintf(pTmp, sizeof(pTmp), "     +");
 	strlcat(pStr, pTmp, lsize);
 
 	for (i = 0; i < ilits->xch_num; i++) {
-		snprintf(pTmp, sizeof(pTmp), "----");
+		if (print_long_log)
+			snprintf(pTmp, sizeof(pTmp), "--------");
+		else
+			snprintf(pTmp, sizeof(pTmp), "----");
 		strlcat(pStr, pTmp, lsize);
 	}
 
@@ -70,7 +77,10 @@ void sec_factory_print_frame(u32 *buf)
 		strlcat(pStr, pTmp, lsize);
 		for (j = 0; j < ilits->xch_num; j++) {
 			data = buf[(j + (ilits->xch_num * i))];
-			snprintf(pTmp, sizeof(pTmp), " %7d", data);
+			if (print_long_log)
+				snprintf(pTmp, sizeof(pTmp), " %7d", data);
+			else
+				snprintf(pTmp, sizeof(pTmp), " %3d", data);
 			strlcat(pStr, pTmp, lsize);
 			if (ilits->allnode) {
 				snprintf(temp, CMD_RESULT_WORD_LEN, "%d,", data);
@@ -91,27 +101,19 @@ void sec_factory_print_frame(u32 *buf)
 	kfree(pStr);
 }
 
-int ilitek_node_mp_test_read(struct sec_cmd_data *sec, char *ini_path, int lcm_state)
+int ilitek_node_mp_test_read(struct sec_cmd_data *sec, int mp_test_num, int lcm_state)
 {
 	int ret = 0;
 	bool esd_en = ilits->wq_esd_ctrl, bat_en = ilits->wq_bat_ctrl;
 	static unsigned char g_user_buf[USER_STR_BUFF] = {0};
 
-	ilits->md_ini_path = ini_path;
-	input_info(true, ilits->dev, "%s path : %s, lcm_state:%d\n", __func__, ilits->md_ini_rq_path, lcm_state);
+	ilits->mp_test_item = mp_test_num;
+	input_info(true, ilits->dev, "%s mp_test_item : %d, lcm_state:%d\n", __func__, ilits->mp_test_item, lcm_state);
 
 	mutex_lock(&ilits->touch_mutex);
 
 	input_info(true, ilits->dev, "%s\n", __func__);
 	memset(ilits->print_buf, 0, ilits->ych_num * ilits->xch_num * CMD_RESULT_WORD_LEN);
-	/* Create the directory for mp_test result */
-	if (lcm_state) {
-		if ((dev_mkdir(CSV_LCM_ON_PATH, S_IRUGO | S_IWUSR)) != 0)
-			input_err(true, ilits->dev, "%s Failed to create directory for mp_test\n", __func__);
-	} else {
-		if ((dev_mkdir(CSV_LCM_OFF_PATH, S_IRUGO | S_IWUSR)) != 0)
-			input_err(true, ilits->dev, "%s Failed to create directory for mp_test\n", __func__);
-	}
 
 	if (esd_en)
 		ili_wq_ctrl(WQ_ESD, DISABLE);
@@ -172,7 +174,7 @@ int test_sram(struct sec_cmd_data *sec)
 	if (ret < 0) {
 		snprintf(buff, sizeof(buff), "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
-		input_err(true, ilits->dev, "ili_reset_ctrl failed,ret:%d\n", __func__, ret);
+		input_err(true, ilits->dev, "ili_reset_ctrl failed,ret:%d\n", ret);
 		goto sram_out;
 	}
 
@@ -182,14 +184,14 @@ int test_sram(struct sec_cmd_data *sec)
 	if (ret < 0) {
 		snprintf(buff, sizeof(buff), "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
-		input_err(true, ilits->dev, "ili_ice_mode_ctrl failed,ret:%d\n", __func__, ret);
+		input_err(true, ilits->dev, "ili_ice_mode_ctrl failed,ret:%d\n", ret);
 		goto sram_out;
 	}
 
 	ret = ili_tddi_ic_sram_test();
 	if (ret < 0) {
 		snprintf(buff, sizeof(buff), "%d", TEST_RESULT_FAIL);
-		input_err(true, ilits->dev, "ili_tddi_ic_sram_test failed,ret:%d\n", __func__, ret);
+		input_err(true, ilits->dev, "ili_tddi_ic_sram_test failed,ret:%d\n", ret);
 	} else
 		snprintf(buff, sizeof(buff), "%d", TEST_RESULT_PASS);
 
@@ -201,10 +203,10 @@ sram_out:
 	if (ret < 0) {
 		snprintf(buff, sizeof(buff), "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
-		input_err(true, ilits->dev, "ili_reset_ctrl 2 failed,ret:%d\n", __func__, ret);
+		input_err(true, ilits->dev, "ili_reset_ctrl 2 failed,ret:%d\n", ret);
 	}
 
-	mdelay(50);
+	msleep(50);
 
 	ret = ili_fw_upgrade_handler(NULL);
 	if (ret < 0) {
@@ -218,7 +220,7 @@ sram_out_2:
 	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
 		sec_cmd_set_cmd_result_all(sec, buff, strnlen(buff, sizeof(buff)), "SRAM");
 
-	input_info(true, ilits->dev, "%s final result: %s\n", __func__, buff);
+	input_raw_info(true, ilits->dev, "%s: %s\n", __func__, buff);
 
 	return ret;
 }
@@ -230,7 +232,7 @@ int debug_mode_onoff(bool enabled)
 	u8 temp[5] = { 0 };
 
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}

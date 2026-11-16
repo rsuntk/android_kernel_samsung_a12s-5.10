@@ -35,7 +35,7 @@ static struct ilitek_protocol_info protocol_info[PROTOCL_VER_NUM] = {
 	[7] = {PROTOCOL_VER_570, 9, 4, 14, 30, 5, 5, 3, 8, 15, 14},
 };
 
-#define FUNC_CTRL_NUM	18
+#define FUNC_CTRL_NUM	20
 static struct ilitek_ic_func_ctrl func_ctrl[FUNC_CTRL_NUM] = {
 	/* cmd[3] = cmd, func, ctrl */
 	// rec_state 0:disable, 1: enable, 2: ignore record
@@ -45,9 +45,9 @@ static struct ilitek_ic_func_ctrl func_ctrl[FUNC_CTRL_NUM] = {
 	[3] = {"stylus", {0x1, 0x7, 0x0}, 3, 0x0, 0, 0xFF},
 	[4] = {"lpwg", {0x1, 0xA, 0x0}, 3, 0x0, 2, 0xFF},
 	[5] = {"proximity", {0x1, 0x10, 0x0}, 3, 0x0, 2, 0xFF},
-	[6] = {"plug", {0x1, 0x11, 0x0}, 3, 0x1, 2, 0xFF},
+	[6] = {"plug", {0x1, 0x11, 0x0}, 3, 0x1, 0, 0xFF},
 	[7] = {"edge_palm", {0x1, 0x12, 0x0}, 3, 0x1, 0, 0xFF},
-	[8] = {"lock_point", {0x1, 0x13, 0x0}, 3, 0x0, 2, 0xFF},
+	[8] = {"lock_point", {0x1, 0x13, 0x0}, 3, 0x0, 0, 0xFF},
 	[9] = {"active", {0x1, 0x14, 0x0}, 3, 0x0, 2, 0xFF},
 	[10] = {"idle", {0x1, 0x19, 0x0}, 3, 0x1, 0, 0xFF},
 	[11] = {"gesture_demo_en", {0x1, 0x16, 0x0}, 3, 0x0, 0, 0xFF},
@@ -55,8 +55,10 @@ static struct ilitek_ic_func_ctrl func_ctrl[FUNC_CTRL_NUM] = {
 	[13] = {"knock_en", {0x1, 0xA, 0x8, 0x03, 0x0, 0x0}, 6, 0xFF, 0, 0xFF},
 	[14] = {"int_trigger", {0x1, 0x1B, 0x0}, 3, 0x0, 2, 0xFF},
 	[15] = {"ear_phone", {0x1, 0x17, 0x0}, 3, 0x0, 0, 0xFF},
-	[16] = {"sip_mode", {0x1, 0x20, 0x0}, 3, 0x1, 2, 0xFF},
-	[17] = {"dead_zone_ctrl", {0x1, 0x12, 0x3}, 3, 0x0, 2, 0xFF},
+	[16] = {"sip_mode", {0x1, 0x20, 0x0}, 3, 0x1, 0, 0xFF},
+	[17] = {"dead_zone_ctrl", {0x1, 0x12, 0x3}, 3, 0x0, 0, 0xFF},
+	[18] = {"cover_mode", {0x1, 0x0C, 0x00}, 3, 0x0, 0, 0xFF},
+	[19] = {"high_sensitivity_mode", {0x1, 0x25, 0x00}, 3, 0x0, 0, 0xFF},
 };
 
 #define CHIP_SUP_NUM	5
@@ -136,7 +138,7 @@ int ili_tddi_ic_sram_test(void)
 	ili_ice_mode_write(0x046000, 0x00000101, 4);
 
 	while (retry > 0) {
-		mdelay(10);
+		usleep_range(10 * 1000, 10 * 1000);
 		ili_ice_mode_read(0x04600C, &bist_done, sizeof(bist_done));
 
 		if ((bist_done & BIT(0)) == 0x01)
@@ -439,8 +441,7 @@ int ili_ic_whole_reset(void)
 		goto out;
 	}
 
-	/* Need accurate power sequence, do not change it to msleep */
-	mdelay(ilits->rst_edge_delay);
+	msleep(ilits->rst_edge_delay);
 
 out:
 	if (!ice)
@@ -464,7 +465,7 @@ static void ilitek_tddi_ic_wr_pack(int packet)
 				__func__, reg_data, retry);
 			break;
 		}
-		mdelay(10);
+		usleep_range(10 * 1000, 10 * 1000);
 	}
 
 	if (retry <= 0)
@@ -490,7 +491,7 @@ static u32 ilitek_tddi_ic_rd_pack(int packet)
 				__func__, reg_data, retry);
 			break;
 		}
-		mdelay(10);
+		usleep_range(10 * 1000, 10 * 1000);
 	}
 	if (retry <= 0)
 		input_info(true, ilits->dev, "%s check 0x4800A error read 0x%X\n", __func__, reg_data);
@@ -645,7 +646,7 @@ int ili_ic_check_int_level(bool level)
 				return 0;
 			}
 		}
-		mdelay(1);
+		usleep_range(1 * 1000, 1 * 1000);
 	}
 	input_err(true, ilits->dev, "%s Error! INT level no detected.\n", __func__);
 	return -1;
@@ -697,7 +698,7 @@ int ili_ic_check_busy(int count, int delay)
 			return 0;
 		}
 
-		mdelay(delay);
+		msleep(delay);
 	} while (--count > 0);
 
 	input_err(true, ilits->dev, "%s Check busy (0x%x) timeout !\n", __func__, busy);
@@ -918,11 +919,23 @@ int ili_ic_get_panel_info(void)
 		ilits->trans_xy = (ilits->chip->core_ver >= CORE_VER_1430) ? buf[5] : OFF;
 	}
 
+	cmd = P5_X_GET_LP_DUMP_STATUE;
+	ilits->wrapper(&cmd, sizeof(cmd), buf, 8, ON, OFF);
+	if (ret < 0)
+		input_err(true, ilits->dev, "Read lp dump status error\n");
+
+	if (buf[0] != cmd)
+		ilits->lp_dump_enable = false;
+	else
+		ilits->lp_dump_enable = (((buf[7] & BIT(0)) == 0) ? true : false);
+
 out:
 	input_info(true, ilits->dev, "%s Panel info: width = %d, height = %d\n",
 		__func__, ilits->panel_wid, ilits->panel_hei);
 	input_info(true, ilits->dev, "%s Transfer touch coordinate = %s\n",
 		__func__, ilits->trans_xy ? "ON" : "OFF");
+	input_info(true, ilits->dev, "%s : LP dump %s\n", __func__, ilits->lp_dump_enable ? "ON" : "OFF");
+
 	return ret;
 }
 
@@ -1065,66 +1078,6 @@ out:
 	return ret;
 }
 
-void ili_get_ini_path(void)
-{
-	int i = 0;
-	char chip_id[8] = {0};
-	char ini_name[MP_INI_PATH_MAX][INI_PATH_SIZE];
-
-	input_info(true, ilits->dev, "%s id:0x%x, type:0x%x\n", __func__, ilits->chip->id, ilits->chip->type);
-
-	for (i = 0; i < MP_INI_PATH_MAX; i++) {
-		memset(ilits->mp_ini_path[i], 0, INI_PATH_SIZE);
-		memset(ini_name[i], 0, INI_PATH_SIZE);
-	}
-
-	snprintf(ini_name[RAWDATANOBK_LCMON_PATH_NUM], INI_PATH_SIZE, "%s", RAWDATANOBK_LCMON_PATH);
-	snprintf(ini_name[DOZERAW_PATH_NUM], INI_PATH_SIZE, "%s", DOZERAW_PATH);
-	snprintf(ini_name[DAC_PATH_NUM], INI_PATH_SIZE, "%s", DAC_PATH);
-	snprintf(ini_name[OPENTESTC_PATH_NUM], INI_PATH_SIZE, "%s", OPENTESTC_PATH);
-	snprintf(ini_name[SHORTTEST_PATH_NUM], INI_PATH_SIZE, "%s", SHORTTEST_PATH);
-	snprintf(ini_name[NOISEPP_LCMON_PATH_NUM], INI_PATH_SIZE, "%s", NOISEPP_LCMON_PATH);
-	snprintf(ini_name[DOZEPP_PATH_NUM], INI_PATH_SIZE, "%s", DOZEPP_PATH);
-	snprintf(ini_name[NOISEPP_LCMOFF_PATH_NUM], INI_PATH_SIZE, "%s", NOISEPP_LCMOFF_PATH);
-	snprintf(ini_name[P2P_TD_PATH_NUM], INI_PATH_SIZE, "%s", P2P_TD_PATH);
-	snprintf(ini_name[RAWDATATD_PATH_NUM], INI_PATH_SIZE, "%s", RAWDATATD_PATH);
-	snprintf(ini_name[RAWDATANOBK_LCMOFF_PATH_NUM], INI_PATH_SIZE, "%s", RAWDATANOBK_LCMOFF_PATH);
-	/* only for 9882Q ic */
-	snprintf(ini_name[RAWDATAHAVEBK_LCMON_PATH_NUM], INI_PATH_SIZE, "%s", RAWDATAHAVEBK_LCMON_PATH);
-	snprintf(ini_name[RAWDATAHAVEBK_LCMOFF_PATH_NUM], INI_PATH_SIZE, "%s", RAWDATAHAVEBK_LCMOFF_PATH);
-
-	switch (ilits->chip->id) {
-	case ILI9882_CHIP:
-		if (ilits->chip->id == ILI9882_CHIP && ilits->chip->type == 0x1A) {
-			/* 9882Q */
-			snprintf(chip_id, sizeof(chip_id), "%s", CHIP_ID_9882Q);
-		} else {
-			/* 9882N */
-			snprintf(chip_id, sizeof(chip_id), "%s", CHIP_ID_9882);
-		}
-		break;
-	case ILI7807_CHIP:
-		if (ilits->chip->type == 0x1F) {
-			/* 7806S */
-			snprintf(chip_id, sizeof(chip_id), "%s", CHIP_ID_7806S);
-		} else if (ilits->chip->type == 0x1C) {
-			/* 7807S */
-			snprintf(chip_id, sizeof(chip_id), "%s", CHIP_ID_7807S);
-		}
-		break;
-	default:
-		input_err(true, ilits->dev, "%s chip id check failed\n", __func__);
-		break;
-	}
-
-	input_info(true, ilits->dev, "%s, chip_id:%s\n", __func__, chip_id);
-
-	for (i = 0; i < MP_INI_PATH_MAX; i++) {
-		snprintf(ilits->mp_ini_path[i], INI_PATH_SIZE, "%s%s/%s", INI_PATH, chip_id, ini_name[i]);
-		input_info(true, ilits->dev, "%s,i:%d,%s\n", __func__, i, ilits->mp_ini_path[i]);
-	}
-}
-
 int ili_ic_get_info(void)
 {
 	int ret = 0;
@@ -1186,6 +1139,118 @@ int ili_ic_dummy_check(void)
 	input_info(true, ilits->dev, "%s Ilitek IC check successe\n", __func__);
 
 	return ret;
+}
+
+void ili_ic_lpwg_dump_buf_init(void)
+{
+	ilits->lpwg_dump_buf = devm_kzalloc(&ilits->spi->dev, LPWG_DUMP_TOTAL_SIZE, GFP_KERNEL);
+	if (ilits->lpwg_dump_buf == NULL) {
+		input_err(true, ilits->dev, "kzalloc for lpwg_dump_buf failed!\n");
+		return;
+	}
+	ilits->lpwg_dump_buf_idx = 0;
+	input_info(true, ilits->dev, "%s : done\n", __func__);
+}
+
+int ili_ic_lpwg_dump_buf_write(u8 *buf)
+{
+	int i = 0;
+
+	if (ilits->lpwg_dump_buf == NULL) {
+		input_err(true, ilits->dev, "%s : kzalloc for lpwg_dump_buf failed!\n", __func__);
+		return -1;
+	}
+//	input_info(true, &ilits->dev, "%s : idx(%d) data (0x%X,0x%X,0x%X,0x%X,0x%X)\n",
+//			__func__, ilits->lpwg_dump_buf_idx, buf[0], buf[1], buf[2], buf[3], buf[4]);
+
+	for (i = 0 ; i < LPWG_DUMP_PACKET_SIZE ; i++) {
+		ilits->lpwg_dump_buf[ilits->lpwg_dump_buf_idx++] = buf[i];
+	}
+	if (ilits->lpwg_dump_buf_idx >= LPWG_DUMP_TOTAL_SIZE) {
+		input_info(true, ilits->dev, "%s : write end of data buf(%d)!\n",
+					__func__, ilits->lpwg_dump_buf_idx);
+		ilits->lpwg_dump_buf_idx = 0;
+	}
+	return 0;
+}
+
+void ili_ic_lpwg_get(void)
+{
+	u8 cmd[3] = {0}, rxbuf[112] = {0};
+	int i, num_event = 0, offset = 6;
+
+	if (ilits->lp_dump_enable == false) {
+		input_err(true, ilits->dev, "Not support LP dump\n");
+		return;
+	}
+
+	/* get LPWG commads*/
+	cmd[0] = 0x01;
+	cmd[1] = 0x0A;
+	cmd[2] = 0x13;
+
+	ili_irq_enable();
+	if (ilits->wrapper(cmd, 3, rxbuf, 112, ON, OFF) < 0) {
+		input_err(true, ilits->dev, "get LPWG info failed\n");
+		return;
+	}
+	ili_irq_disable();
+
+	/* number of event */
+	num_event = rxbuf[5];
+	input_info(true, ilits->dev, "LPWG event number = %d\n", num_event);
+
+	for (i = 0; i < num_event; i++) {
+		ili_ic_lpwg_dump_buf_write(&rxbuf[offset + i * 5]);
+//		input_info(true, ilits->dev, "%x %x %x %x %x\n",
+//						rxbuf[offset + i * 5], rxbuf[offset + i * 5 + 1], rxbuf[offset + i * 5 + 2],
+//						rxbuf[offset + i * 5 + 3], rxbuf[offset + i * 5 + 4]);
+	}
+}
+
+int ili_ic_lpwg_dump_buf_read(u8 *buf)
+{
+	u8 read_buf[30] = { 0 };
+	int read_packet_cnt;
+	int start_idx;
+	int i;
+
+	if (ilits->lpwg_dump_buf == NULL) {
+		input_err(true, ilits->dev, "%s : kzalloc for lpwg_dump_buf failed!\n", __func__);
+		return 0;
+	}
+
+	if (ilits->lpwg_dump_buf[ilits->lpwg_dump_buf_idx] == 0
+		&& ilits->lpwg_dump_buf[ilits->lpwg_dump_buf_idx + 1] == 0
+		&& ilits->lpwg_dump_buf[ilits->lpwg_dump_buf_idx + 2] == 0) {
+		start_idx = 0;
+		read_packet_cnt = ilits->lpwg_dump_buf_idx / LPWG_DUMP_PACKET_SIZE;
+	} else {
+		start_idx = ilits->lpwg_dump_buf_idx;
+		read_packet_cnt = LPWG_DUMP_TOTAL_SIZE / LPWG_DUMP_PACKET_SIZE;
+	}
+
+	input_info(true, ilits->dev, "%s : lpwg_dump_buf_idx(%d), start_idx (%d), read_packet_cnt(%d)\n",
+				__func__, ilits->lpwg_dump_buf_idx, start_idx, read_packet_cnt);
+
+	for (i = 0 ; i < read_packet_cnt ; i++) {
+		memset(read_buf, 0x00, 30);
+		snprintf(read_buf, 30, "%03d : %02X%02X%02X%02X%02X\n",
+					i, ilits->lpwg_dump_buf[start_idx + 0], ilits->lpwg_dump_buf[start_idx + 1],
+					ilits->lpwg_dump_buf[start_idx + 2], ilits->lpwg_dump_buf[start_idx + 3],
+					ilits->lpwg_dump_buf[start_idx + 4]);
+
+//		input_info(true, &ilits->dev, "%s : %s\n", __func__, read_buf);
+		strlcat(buf, read_buf, PAGE_SIZE);
+
+		if (start_idx + LPWG_DUMP_PACKET_SIZE >= LPWG_DUMP_TOTAL_SIZE) {
+			start_idx = 0;
+		} else {
+			start_idx += 5;
+		}
+	}
+
+	return 0;
 }
 
 static struct ilitek_ic_info chip;
