@@ -2979,10 +2979,19 @@ static inline int file_permission(struct file *file, int mask)
 {
 	return inode_permission(file_inode(file), mask);
 }
+static inline int file_permission2(struct vfsmount *mnt, struct file *file, int mask)
+{
+	return inode_permission2(mnt, file_inode(file), mask);
+}
 static inline int path_permission(const struct path *path, int mask)
 {
 	return inode_permission(d_inode(path->dentry), mask);
 }
+static inline int path_permission2(struct vfsmount *mnt, const struct path *path, int mask)
+{
+	return inode_permission2(mnt, d_inode(path->dentry), mask);
+}
+
 extern int __check_sticky(struct inode *dir, struct inode *inode);
 
 static inline bool execute_ok(struct inode *inode)
