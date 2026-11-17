@@ -47,8 +47,7 @@
 #define input_dbg(mode, dev, fmt, ...)						\
 ({										\
 	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_dbg(dev, input_log_buf, ## __VA_ARGS__);				\
+	dev_dbg(dev, SECLOG " " fmt, ## __VA_ARGS__);				\
 	if (mode) {								\
 		if (dev)							\
 			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
@@ -61,8 +60,7 @@
 #define input_info(mode, dev, fmt, ...)						\
 ({										\
 	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
+	dev_info(dev, SECLOG " " fmt, ## __VA_ARGS__);				\
 	if (mode) {								\
 		if (dev)							\
 			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
@@ -75,8 +73,7 @@
 #define input_err(mode, dev, fmt, ...)						\
 ({										\
 	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_err(dev, input_log_buf, ## __VA_ARGS__);				\
+	dev_err(dev, SECLOG " " fmt, ## __VA_ARGS__);				\
 	if (mode) {								\
 		if (dev)							\
 			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s",	\
@@ -89,8 +86,7 @@
 #define input_raw_info(mode, dev, fmt, ...)					\
 ({										\
 	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
+	dev_info(dev, SECLOG " " fmt, ## __VA_ARGS__);				\
 	if (mode) { 							\
 		if (dev)							\
 			snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", \
@@ -105,24 +101,13 @@
 #define input_raw_data_clear() sec_tsp_raw_data_clear()
 #else
 #define input_dbg(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_dbg(dev, input_log_buf, ## __VA_ARGS__);				\
-})
+	dev_dbg(dev, SECLOG " " fmt, ## __VA_ARGS__)
 #define input_info(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_info(dev, input_log_buf, ## __VA_ARGS__);				\
-})
+	dev_info(dev, SECLOG " " fmt, ## __VA_ARGS__)
 #define input_err(mode, dev, fmt, ...)						\
-({										\
-	static char input_log_buf[INPUT_LOG_BUF_SIZE];				\
-	snprintf(input_log_buf, sizeof(input_log_buf), "%s %s", SECLOG, fmt);	\
-	dev_err(dev, input_log_buf, ## __VA_ARGS__);				\
-})
-#define input_raw_info(mode, dev, fmt, ...) input_info(mode, dev, fmt, ## __VA_ARGS__)
+	dev_err(dev, SECLOG " " fmt, ## __VA_ARGS__)
+#define input_raw_info(mode, dev, fmt, ...)					\
+	input_info(mode, dev, fmt, ## __VA_ARGS__)
 #define input_log_fix() {}
 #define input_raw_data_clear() sec_tsp_raw_data_clear()
 #endif
