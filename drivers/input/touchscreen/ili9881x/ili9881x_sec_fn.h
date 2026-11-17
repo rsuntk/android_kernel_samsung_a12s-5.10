@@ -38,7 +38,9 @@
 
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
+#if IS_ENABLED(CONFIG_SPU_VERIFY)
 #include <linux/spu-verify.h>
+#endif
 #include "ili9881x.h"
 #define TEST_MODE_MIN_MAX		false
 #define TEST_MODE_ALL_NODE		true
@@ -48,8 +50,8 @@
 #define TEST_RESULT_FAIL 1
 #define USER_STR_BUFF		PAGE_SIZE
 
-#define TSP_PATH_EXTERNAL_FW		"/sdcard/Firmware/TSP/tsp.hex"
-#define TSP_PATH_EXTERNAL_FW_SIGNED	"/sdcard/Firmware/TSP/tsp_signed.hex"
+#define TSP_PATH_EXTERNAL_FW		"tsp.hex"
+#define TSP_PATH_EXTERNAL_FW_SIGNED	"tsp_signed.hex"
 
 /* factory test mode */
 struct sec_factory_test_mode {
@@ -95,6 +97,11 @@ enum GAME_MODE {
 	GAME_MODE_ENABLE = 1,
 };
 
+enum HIGH_SENSITIVITY_MODE {
+	HIGH_SENSITIVITY_DISABLE = 0,
+	HIGH_SENSITIVITY_ENABLE = 1,
+};
+
 enum {
 	BUILT_IN = 0,
 	UMS,
@@ -105,7 +112,7 @@ enum {
 int ili_sec_fn_init(void);
 void ili_sec_fn_remove(void);
 int test_sram(struct sec_cmd_data *sec);
-int ilitek_node_mp_test_read(struct sec_cmd_data *sec, char *log_path, int lcm_state);
+int ilitek_node_mp_test_read(struct sec_cmd_data *sec, int mp_test_num, int lcm_state);
 void sec_factory_print_frame(u32 *buf);
 int debug_mode_onoff(bool enabled);
 #endif /* __ILI9881X_SEC_FN_H */

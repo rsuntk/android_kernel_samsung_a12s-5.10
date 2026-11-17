@@ -27,6 +27,11 @@ struct touch_bus_info {
 	struct ilitek_hwif_info *hwif;
 };
 
+#ifdef CONFIG_SAMSUNG_TUI
+static int stui_tsp_enter(void);
+static int stui_tsp_exit(void);
+#endif
+
 struct ilitek_ts_data *ilits;
 
 #if SPI_DMA_TRANSFER_SPLIT
@@ -44,10 +49,15 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 	struct spi_message message;
 	struct spi_transfer *xfer;
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}
+
+#ifdef CONFIG_SAMSUNG_TUI
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
 
 	xfer = kzalloc(DMA_TRANSFER_MAX_CHUNK * sizeof(struct spi_transfer), GFP_KERNEL);
 
@@ -57,7 +67,6 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 		goto out;
 	}
 
-	spi_message_init(&message);
 	memset(ilits->spi_tx, 0x0, SPI_TX_BUF_SIZE);
 	memset(ilits->spi_rx, 0x0, SPI_RX_BUF_SIZE);
 
@@ -76,7 +85,12 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 		xferlen = n_tx;
 		memcpy(ilits->spi_tx, (u8 *)txbuf, xferlen);
 
+		if (ilits->cs_gpio > 0)
+			gpio_direction_output(ilits->cs_gpio, 0);
+
 		for (xfercnt = 0; xfercnt < xferloop; xfercnt++) {
+			spi_message_init(&message);
+
 			if (xferlen > DMA_TRANSFER_MAX_LEN)
 				xferlen = DMA_TRANSFER_MAX_LEN;
 
@@ -84,14 +98,13 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 			xfer[xfercnt].tx_buf = ilits->spi_tx + xfercnt * DMA_TRANSFER_MAX_LEN;
 			spi_message_add_tail(&xfer[xfercnt], &message);
 			xferlen = n_tx - (xfercnt+1) * DMA_TRANSFER_MAX_LEN;
-		}
-		if (ilits->cs_gpio > 0) {
-			gpio_direction_output(ilits->cs_gpio, 0);
+
 			status = spi_sync(spi, &message);
+		}
+
+		if (ilits->cs_gpio > 0)
 			gpio_direction_output(ilits->cs_gpio, 1);
-		} else {
-			status = spi_sync(spi, &message);
-		}
+
 		break;
 	case SPI_READ:
 		if (n_tx > DMA_TRANSFER_MAX_LEN) {
@@ -113,7 +126,13 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 			xferloop = duplex_len / DMA_TRANSFER_MAX_LEN;
 
 		xferlen = duplex_len;
+
+		if (ilits->cs_gpio > 0)
+			gpio_direction_output(ilits->cs_gpio, 0);
+
 		for (xfercnt = 0; xfercnt < xferloop; xfercnt++) {
+			spi_message_init(&message);
+
 			if (xferlen > DMA_TRANSFER_MAX_LEN)
 				xferlen = DMA_TRANSFER_MAX_LEN;
 
@@ -122,15 +141,13 @@ int ili_spi_write_then_read_split(struct spi_device *spi,
 			xfer[xfercnt].rx_buf = ilits->spi_rx + xfercnt * DMA_TRANSFER_MAX_LEN;
 			spi_message_add_tail(&xfer[xfercnt], &message);
 			xferlen = duplex_len - (xfercnt + 1) * DMA_TRANSFER_MAX_LEN;
+
+			status = spi_sync(spi, &message);
 		}
 
-		if (ilits->cs_gpio > 0) {
-			gpio_direction_output(ilits->cs_gpio, 0);
-			status = spi_sync(spi, &message);
+		if (ilits->cs_gpio > 0)
 			gpio_direction_output(ilits->cs_gpio, 1);
-		} else {
-			status = spi_sync(spi, &message);
-		}
+
 		if (status == 0) {
 			if (ilits->spi_rx[1] != SPI_ACK && !atomic_read(&ilits->ice_stat)) {
 				status = DO_SPI_RECOVER;
@@ -164,11 +181,15 @@ int ili_spi_write_then_read_direct(struct spi_device *spi,
 	struct spi_message message;
 	struct spi_transfer xfer;
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}
 
+#ifdef CONFIG_SAMSUNG_TUI
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
 	if (n_rx > SPI_RX_BUF_SIZE) {
 		input_err(true, ilits->dev, "%s Rx length is greater than spi local buf, abort\n", __func__);
 		status = -ENOMEM;
@@ -252,7 +273,7 @@ static int ili_spi_mp_pre_cmd(u8 cdc)
 {
 	u8 pre[5] = {0};
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}
@@ -260,6 +281,11 @@ static int ili_spi_mp_pre_cmd(u8 cdc)
 	if (!atomic_read(&ilits->mp_stat) || cdc != P5_X_SET_CDC_INIT ||
 		ilits->chip->core_ver >= CORE_VER_1430)
 		return 0;
+
+#ifdef CONFIG_SAMSUNG_TUI
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
 
 	ILI_DBG("%s mp test with pre commands\n", __func__);
 
@@ -291,18 +317,18 @@ static int ili_spi_pll_clk_wakeup(void)
 	u8 wakeup[9] = {0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3, 0xA3};
 	u32 wlen = sizeof(wakeup);
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}
 
 	wdata[0] = SPI_WRITE;
-	wdata[1] = wlen >> 8;
+	wdata[1] = (wlen >> 8) & 0xFF;
 	wdata[2] = wlen & 0xff;
 	index = 3;
 	wlen += index;
 
-	ipio_memcpy(&wdata[index], wakeup, wlen, wlen);
+	ipio_memcpy(&wdata[index], wakeup, sizeof(wakeup), wlen);
 
 	input_info(true, ilits->dev, "%s Write dummy to wake up spi pll clk\n", __func__);
 	if (ilits->spi_write_then_read(ilits->spi, wdata, wlen, NULL, 0) < 0) {
@@ -321,10 +347,15 @@ static int ili_spi_wrapper(u8 *txbuf, u32 wlen, u8 *rxbuf, u32 rlen, bool spi_ir
 	u8 checksum = 0;
 	bool ice = atomic_read(&ilits->ice_stat);
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
 		return -1;
 	}
+
+#ifdef CONFIG_SAMSUNG_TUI
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
 
 	if (wlen > 0) {
 		if (!txbuf) {
@@ -490,6 +521,7 @@ int ili_core_spi_setup(int num)
 static int ilitek_spi_probe(struct spi_device *spi)
 {
 	struct touch_bus_info *info;
+	int ret;
 
 	input_info(true, &spi->dev, "%s ilitek spi probe\n", __func__);
 
@@ -552,6 +584,7 @@ static int ilitek_spi_probe(struct spi_device *spi)
 	ilits->int_pulse = true;
 	ilits->mp_retry = false;
 	ilits->tp_suspend = false;
+	ilits->tp_shutdown = false;
 	ilits->power_status = POWER_ON_STATUS;
 	ilits->screen_off_sate = TP_RESUME;
 
@@ -576,7 +609,6 @@ static int ilitek_spi_probe(struct spi_device *spi)
 		ilits->reset = TP_HW_RST_ONLY;
 
 	ilits->rst_edge_delay = 11;
-	ilits->fw_open = REQUEST_FIRMWARE;
 	ilits->fw_upgrade_mode = UPGRADE_IRAM;
 	ilits->mp_move_code = ili_move_mp_code_iram;
 	ilits->gesture_move_code = ili_move_gesture_code_iram;
@@ -596,10 +628,13 @@ static int ilitek_spi_probe(struct spi_device *spi)
 	ilits->prox_face_mode = false;
 	ilits->dead_zone_enabled = true; //default true at fw
 	ilits->sip_mode_enabled = false;
+	ilits->high_sensitivity_mode_enabled = false;
 	ilits->game_mode_enabled = false;
+	ilits->clear_cover_mode_enabled = false;
 	ilits->prox_lp_scan_mode_enabled = false;
 	ilits->sleep_handler_mode = TP_RESUME;
-	ilits->usb_plug_status = USB_PLUG_DETACHED;
+	ilits->mp_test_item = MP_ITEM_NOISE_PEAK_TO_PEAK_WITH_PANEL;
+	ilits->current_mpitem = "";
 
 #if ENABLE_GESTURE
 	ilits->gesture = DISABLE;
@@ -627,9 +662,14 @@ static int ilitek_spi_probe(struct spi_device *spi)
 	if (ili_core_spi_setup(SPI_CLK) < 0)
 		return -EINVAL;
 
-	return info->hwif->plat_probe();
+	ret = info->hwif->plat_probe();
+#ifdef CONFIG_SAMSUNG_TUI
+	if (!ret)
+		ret = stui_set_info(stui_tsp_enter, stui_tsp_exit, STUI_TSP_TYPE_ILITEK);
+#endif
+	return ret;
 }
-
+/*
 static void ilitek_spi_shutdown(struct spi_device *spi)
 {
 	input_info(true, ilits->dev, "%s\n", __func__);
@@ -642,7 +682,7 @@ static int ilitek_spi_remove(struct spi_device *spi)
 	input_info(true, ilits->dev, "%s\n", __func__);
 	return 0;
 }
-
+*/
 static struct spi_device_id tp_spi_id[] = {
 	{TDDI_DEV_ID, 0},
 	{},
@@ -672,8 +712,9 @@ int ili_interface_dev_init(struct ilitek_hwif_info *hwif)
 	info->bus_driver.driver.pm = hwif->pm;
 
 	info->bus_driver.probe = ilitek_spi_probe;
-	info->bus_driver.shutdown = ilitek_spi_shutdown;
-	info->bus_driver.remove = ilitek_spi_remove;
+/* Shutdown is called from the SemInputDeviceManagerService. */
+//	info->bus_driver.shutdown = ilitek_spi_shutdown;
+//	info->bus_driver.remove = ilitek_spi_remove;
 	info->bus_driver.id_table = tp_spi_id;
 
 	info->hwif = hwif;
@@ -691,3 +732,53 @@ void ili_interface_dev_exit(struct ilitek_ts_data *ts)
 //	spi_unregister_driver(&info->bus_driver);
 	ipio_kfree((void **)&info);
 }
+
+#ifdef CONFIG_SAMSUNG_TUI
+extern int stui_spi_lock(struct spi_master *spi);
+extern int stui_spi_unlock(struct spi_master *spi);
+
+static int stui_tsp_enter(void)
+{
+	int ret = 0;
+
+	if (!ilits)
+		return -EINVAL;
+
+	if (!ilits->power_status) {
+		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
+		return -1;
+	}
+
+	ili_irq_unregister();
+
+	ret = stui_spi_lock(ilits->spi->master);
+	if (ret) {
+		pr_err("[STUI] stui_spi_lock failed : %d\n", ret);
+		ili_irq_register(ilits->irq_tirgger_type);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int stui_tsp_exit(void)
+{
+	int ret = 0;
+
+	if (!ilits)
+		return -EINVAL;
+
+	if (!ilits->power_status) {
+		input_err(true, ilits->dev, "%s failed(power off state).\n", __func__);
+		return -1;
+	}
+
+	ret = stui_spi_unlock(ilits->spi->master);
+	if (ret)
+		pr_err("[STUI] stui_spi_unlock failed : %d\n", ret);
+
+	ili_irq_register(ilits->irq_tirgger_type);
+
+	return ret;
+}
+#endif

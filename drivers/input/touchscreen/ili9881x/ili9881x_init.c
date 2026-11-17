@@ -21,6 +21,9 @@
  */
 
 #include "ili9881x.h"
+#if IS_ENABLED(CONFIG_FB)
+#include <linux/fb.h>
+#endif
 
 void ili_tp_reset(void)
 {
@@ -104,11 +107,13 @@ void ili_input_register(void)
 	ilits->input_dev_dexpad = input_allocate_device();
 	if (ilits->input_dev_dexpad == NULL) {
 		input_err(true, ilits->dev, "%s: allocate input_dev_dexpad err!\n", __func__);
-		if (ilits->input) {
-			input_free_device(ilits->input);
-			ilits->input = NULL;
-			return;
+		if (ilits->input_dev_proximity) {
+			input_free_device(ilits->input_dev_proximity);
+			ilits->input_dev_proximity = NULL;
 		}
+		input_free_device(ilits->input);
+		ilits->input = NULL;
+		return;
 	}
 
 	ilits->input_dev_dexpad->name = "sec_touchpad";
@@ -183,12 +188,18 @@ void ili_input_register(void)
 		input_err(true, ilits->dev, "%s: Unable to register %s input device\n",
 					__func__, ilits->input_dev_dexpad->name);
 
-		input_free_device(ilits->input);
-		if (ilits->input_dev_dexpad)
+		if (ilits->input_dev_dexpad) {
 			input_free_device(ilits->input_dev_dexpad);
-
-		input_unregister_device(ilits->input);
-		ilits->input = NULL;
+			ilits->input_dev_dexpad = NULL;
+		}
+		if (ilits->input_dev_proximity) {
+			input_unregister_device(ilits->input_dev_proximity);
+			ilits->input_dev_proximity = NULL;
+		}
+		if (ilits->input) {
+			input_unregister_device(ilits->input);
+			ilits->input = NULL;
+		}
 	}
 }
 
@@ -452,7 +463,6 @@ static irqreturn_t ilitek_plat_isr_bottom_half(int irq, void *dev_id)
 
 void ili_irq_unregister(void)
 {
-	irq_clear_status_flags(ilits->irq_num, IRQ_DISABLE_UNLAZY);
 	devm_free_irq(ilits->dev, ilits->irq_num, NULL);
 }
 
@@ -470,7 +480,6 @@ int ili_irq_register(int type)
 
 	input_info(true, ilits->dev, "%s ilits->irq_num = %d\n", __func__, ilits->irq_num);
 
-	irq_set_status_flags(ilits->irq_num, IRQ_DISABLE_UNLAZY);
 	ret = devm_request_threaded_irq(ilits->dev, ilits->irq_num,
 				   ilitek_plat_isr_top_half,
 				   ilitek_plat_isr_bottom_half,
@@ -617,6 +626,97 @@ void ilitek_plat_charger_init(void)
 /* add_for_charger_end */
 #endif
 #endif
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+static int otg_flag = 0;
+
+static int ilitek_ccic_notification(struct notifier_block *nb,
+	   unsigned long action, void *data)
+{
+	PD_NOTI_USB_STATUS_TYPEDEF usb_status = *(PD_NOTI_USB_STATUS_TYPEDEF *)data;
+
+	if (usb_status.dest != PDIC_NOTIFY_DEV_USB)
+		return 0;
+
+	switch (usb_status.drp) {
+	case USB_STATUS_NOTIFY_ATTACH_DFP:
+		otg_flag = 1;
+		input_info(true, ilits->dev, "%s otg_flag %d\n", __func__, otg_flag);
+		break;
+	case USB_STATUS_NOTIFY_DETACH:
+		otg_flag = 0;
+		input_info(true, ilits->dev, "%s otg_flag %d\n", __func__, otg_flag);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+#endif
+
+int ilitek_set_vbus(void)
+{
+	int ret = 0;
+
+	if (ilits->power_status == POWER_OFF_STATUS || ilits->tp_shutdown || atomic_read(&ilits->fw_stat) != END) {
+		input_info(true, ilits->dev, "%s: power off status(%d,%d)\n",
+					__func__, ilits->power_status, ilits->tp_shutdown);
+		return ret;
+	}
+
+	ret = ili_ic_func_ctrl("plug", !ilits->usb_plug_status);// plug in
+	if (ret < 0)
+		input_err(true, ilits->dev, "%s Write plug in failed\n", __func__);
+
+	return ret;
+}
+
+void ilitek_vbus_work(struct work_struct *work)
+{
+	mutex_lock(&ilits->touch_mutex);
+	ilitek_set_vbus();
+	mutex_unlock(&ilits->touch_mutex);
+}
+
+static int ilitek_vbus_notifier(struct notifier_block *nb, unsigned long cmd, void *data)
+{
+	vbus_status_t vbus_type = *(vbus_status_t *) data;
+
+#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+	input_info(true, ilits->dev, "%s otg_flag=%d\n", __func__, otg_flag);
+#endif
+	input_info(true, ilits->dev, "%s: cmd: %lu, vbus_type: %d\n", __func__, cmd, vbus_type);
+
+	switch (vbus_type) {
+	case STATUS_VBUS_HIGH:
+#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+		if (otg_flag)
+			return NOTIFY_DONE;
+#endif
+		ilits->usb_plug_status = USB_PLUG_ATTACHED;
+		break;
+	case STATUS_VBUS_LOW:
+		ilits->usb_plug_status = USB_PLUG_DETACHED;
+		break;
+	default:
+		input_info(true, ilits->dev, "%s: NOT activation\n", __func__);
+		return NOTIFY_DONE;
+	}
+
+	schedule_work(&ilits->work_vbus.work);
+
+	return NOTIFY_DONE;
+}
+#endif
+
+static const char *ili_dt_prop(struct device_node *np, const char *name, char *buf, size_t len)
+{
+	snprintf(buf, len, "iliteck,%s", name);
+	if (of_find_property(np, buf, NULL))
+		return buf;
+	snprintf(buf, len, "ilitek,%s", name);
+	return buf;
+}
 
 static int parse_dt(void)
 {
@@ -624,6 +724,7 @@ static int parse_dt(void)
 	u32 value;
 	struct property *prop;
 	struct device_node *np = ilits->dev->of_node;
+	char prop_name[64];
 	u32 px_zone[3] = { 0 };
 #if defined(CONFIG_EXYNOS_DPU30)
 	int lcdtype = 0;
@@ -659,59 +760,80 @@ static int parse_dt(void)
 	input_info(true, ilits->dev, "%s: lcdtype : 0x%08X\n", __func__, lcdtype);
 #endif
 
-	lcd_id1_gpio = of_get_named_gpio(np, "iliteck,lcdid1-gpio", 0);
-	if (gpio_is_valid(lcd_id1_gpio))
-		input_info(true, ilits->dev, "%s: lcd id1_gpio %d(%d)\n",
-			__func__, lcd_id1_gpio, gpio_get_value(lcd_id1_gpio));
-	else {
-		input_err(true, ilits->dev, "%s: Failed to get novatek,lcdid1-gpio\n", __func__);
-		return -EINVAL;
-	}
+	fw_name_cnt = of_property_count_strings(np, ili_dt_prop(np, "fw_name", prop_name, sizeof(prop_name)));
 
-	lcd_id2_gpio = of_get_named_gpio(np, "iliteck,lcdid2-gpio", 0);
-	if (gpio_is_valid(lcd_id2_gpio)) {
-		input_info(true, ilits->dev, "%s: lcd id2_gpio %d(%d)\n",
-			__func__, lcd_id2_gpio, gpio_get_value(lcd_id2_gpio));
+	if (fw_name_cnt <= 0) {
+		input_err(true, ilits->dev, "%s: abnormal fw count\n", __func__);
+		return -EINVAL;
+
+	} else if (fw_name_cnt == 1) {
+
+		retval = of_property_read_u32(np, ili_dt_prop(np, "lcdtype", prop_name, sizeof(prop_name)), &ilits->lcdtype);
+		if (retval < 0) {
+			input_err(true, ilits->dev, "%s Unable to read lcdtype property\n", __func__);
+			ilits->lcdtype = -1;
+		} else {
+			input_info(true, ilits->dev, "%s: DT lcd type(0x%06X), lcdtype(0x%06X)\n", __func__, ilits->lcdtype, lcdtype);
+
+			if (ilits->lcdtype != 0x00 && ilits->lcdtype != (lcdtype & 0x00ffff)) {
+				input_err(true, ilits->dev, "%s: panel mismatched, unload driver\n", __func__);
+				return -EINVAL;
+			}
+		}
 	} else {
-		input_err(true, ilits->dev, "%s: Failed to get novatek,lcdid2-gpio\n", __func__);
-		return -EINVAL;
+		lcd_id1_gpio = of_get_named_gpio(np, ili_dt_prop(np, "lcdid1-gpio", prop_name, sizeof(prop_name)), 0);
+		if (gpio_is_valid(lcd_id1_gpio))
+			input_info(true, ilits->dev, "%s: lcd id1_gpio %d(%d)\n",
+				__func__, lcd_id1_gpio, gpio_get_value(lcd_id1_gpio));
+		else {
+			input_err(true, ilits->dev, "%s: Failed to get lcdid1-gpio\n", __func__);
+			return -EINVAL;
+		}
+
+		lcd_id2_gpio = of_get_named_gpio(np, ili_dt_prop(np, "lcdid2-gpio", prop_name, sizeof(prop_name)), 0);
+		if (gpio_is_valid(lcd_id2_gpio)) {
+			input_info(true, ilits->dev, "%s: lcd id2_gpio %d(%d)\n",
+				__func__, lcd_id2_gpio, gpio_get_value(lcd_id2_gpio));
+		} else {
+			input_err(true, ilits->dev, "%s: Failed to get lcdid2-gpio\n", __func__);
+			return -EINVAL;
+		}
+
+		/* support lcd id3 */
+		lcd_id3_gpio = of_get_named_gpio(np, ili_dt_prop(np, "lcdid3-gpio", prop_name, sizeof(prop_name)), 0);
+		if (gpio_is_valid(lcd_id3_gpio)) {
+			input_info(true, ilits->dev, "%s: lcd id3_gpio %d(%d)\n",
+				__func__, lcd_id3_gpio, gpio_get_value(lcd_id3_gpio));
+			fw_sel_idx =
+				(gpio_get_value(lcd_id3_gpio) << 2) | (gpio_get_value(lcd_id2_gpio) << 1) | gpio_get_value(lcd_id1_gpio);
+		} else {
+			input_err(true, ilits->dev, "%s: Failed to get lcdid3-gpio and use #1 &#2 id\n", __func__);
+			fw_sel_idx = (gpio_get_value(lcd_id2_gpio) << 1) | gpio_get_value(lcd_id1_gpio);
+		}
+
+		lcdtype_cnt = of_property_count_u32_elems(np, ili_dt_prop(np, "lcdtype", prop_name, sizeof(prop_name)));
+
+		input_info(true, ilits->dev, "%s: fw_name_cnt(%d) & lcdtype_cnt(%d) & fw_sel_idx(%d)\n",
+					__func__, fw_name_cnt, lcdtype_cnt, fw_sel_idx);
+
+		if (lcdtype_cnt <= 0 || fw_name_cnt <= 0 || lcdtype_cnt <= fw_sel_idx || fw_name_cnt <= fw_sel_idx) {
+			input_err(true, ilits->dev, "%s: abnormal lcdtype & fw name count, fw_sel_idx(%d)\n",
+					__func__, fw_sel_idx);
+			return -EINVAL;
+		}
+		of_property_read_u32_index(np, ili_dt_prop(np, "lcdtype", prop_name, sizeof(prop_name)), fw_sel_idx, &ilits->lcdtype);
+		input_info(true, ilits->dev, "%s: lcd id(%d), ap lcdtype=0x%06X & dt lcdtype=0x%06X\n",
+						__func__, fw_sel_idx, lcdtype, ilits->lcdtype);
 	}
 
-	/* support lcd id3 */
-	lcd_id3_gpio = of_get_named_gpio(np, "iliteck,lcdid3-gpio", 0);
-	if (gpio_is_valid(lcd_id3_gpio)) {
-		input_info(true, ilits->dev, "%s: lcd id3_gpio %d(%d)\n",
-			__func__, lcd_id3_gpio, gpio_get_value(lcd_id3_gpio));
-		fw_sel_idx =
-			(gpio_get_value(lcd_id3_gpio) << 2) | (gpio_get_value(lcd_id2_gpio) << 1) | gpio_get_value(lcd_id1_gpio);
-	} else {
-		input_err(true, ilits->dev, "%s: Failed to get novatek,lcdid3-gpio and use #1 &#2 id\n", __func__);
-		fw_sel_idx = (gpio_get_value(lcd_id2_gpio) << 1) | gpio_get_value(lcd_id1_gpio);
-	}
-
-	fw_name_cnt = of_property_count_strings(np, "iliteck,fw_name");
-	lcdtype_cnt = of_property_count_u32_elems(np, "iliteck,lcdtype");
-
-	input_info(true, ilits->dev, "%s: fw_name_cnt(%d) & lcdtype_cnt(%d) & fw_sel_idx(%d)\n",
-				__func__, fw_name_cnt, lcdtype_cnt, fw_sel_idx);
-
-	if (lcdtype_cnt <= 0 || fw_name_cnt <= 0 || lcdtype_cnt <= fw_sel_idx || fw_name_cnt <= fw_sel_idx) {
-		input_err(true, ilits->dev, "%s: abnormal lcdtype & fw name count, fw_sel_idx(%d)\n",
-				__func__, fw_sel_idx);
-		return -EINVAL;
-	}
-	of_property_read_u32_index(np, "iliteck,lcdtype", fw_sel_idx, &ilits->lcdtype);
-	input_info(true, ilits->dev, "%s: lcd id(%d), ap lcdtype=0x%06X & dt lcdtype=0x%06X\n",
-					__func__, fw_sel_idx, lcdtype, ilits->lcdtype);
-
-	of_property_read_string_index(np, "iliteck,fw_name", fw_sel_idx, &ilits->fw_name);
+	of_property_read_string_index(np, ili_dt_prop(np, "fw_name", prop_name, sizeof(prop_name)), fw_sel_idx, &ilits->fw_name);
 	if (ilits->fw_name == NULL || strlen(ilits->fw_name) == 0) {
 		input_err(true, ilits->dev, "%s: Failed to get fw name\n", __func__);
 		return -EINVAL;
 	}
 	input_info(true, ilits->dev, "%s: fw name(%s)\n", __func__, ilits->fw_name);
 
-	retval = of_property_read_string(np, "iliteck,lcd_rst", &ilits->regulator_lcd_rst);
+	retval = of_property_read_string(np, ili_dt_prop(np, "lcd_rst", prop_name, sizeof(prop_name)), &ilits->regulator_lcd_rst);
 	if (retval < 0) {
 		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_rst name property\n", __func__);
 	} else {
@@ -724,7 +846,7 @@ static int parse_dt(void)
 		}
 	}
 
-	retval = of_property_read_string(np, "iliteck,lcd_bl_en", &ilits->regulator_lcd_bl_en);
+	retval = of_property_read_string(np, ili_dt_prop(np, "lcd_bl_en", prop_name, sizeof(prop_name)), &ilits->regulator_lcd_bl_en);
 	if (retval < 0) {
 		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_bl_en name property\n", __func__);
 	} else {
@@ -737,9 +859,9 @@ static int parse_dt(void)
 		}
 	}
 
-	retval = of_property_read_string(np, "iliteck,lcd_vddi", &ilits->regulator_lcd_vddi);
+	retval = of_property_read_string(np, ili_dt_prop(np, "lcd_vddi", prop_name, sizeof(prop_name)), &ilits->regulator_lcd_vddi);
 	if (retval < 0) {
-		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_rst name property\n", __func__);
+		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_vddi name property\n", __func__);
 	} else {
 		if (!ilits->lcd_vddi)
 			ilits->lcd_vddi = devm_regulator_get(ilits->dev, ilits->regulator_lcd_vddi);
@@ -750,36 +872,40 @@ static int parse_dt(void)
 		}
 	}
 
-	prop = of_find_property(np, "iliteck,irq-gpio", NULL);
+	ili_dt_prop(np, "irq-gpio", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length) {
 		ilits->tp_int = of_get_named_gpio_flags(np,
-				"iliteck,irq-gpio", 0,
+				prop_name, 0,
 				(enum of_gpio_flags *)&ilits->irq_flags);
 	} else {
 		ilits->tp_int = -1;
 	}
 
-	prop = of_find_property(np, "iliteck,reset-gpio", NULL);
+	ili_dt_prop(np, "reset-gpio", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length) {
 		ilits->tp_rst = of_get_named_gpio_flags(np,
-				"iliteck,reset-gpio", 0, NULL);
+				prop_name, 0, NULL);
 	} else {
 		ilits->tp_rst = -1;
 	}
 	input_err(true, ilits->dev, "%s ilits->tp_rst : %d\n", __func__, ilits->tp_rst);
 
-	prop = of_find_property(np, "iliteck,cs-gpio", NULL);
+	ili_dt_prop(np, "cs-gpio", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length)
-		ilits->cs_gpio = of_get_named_gpio_flags(np, "iliteck,cs-gpio", 0, NULL);
+		ilits->cs_gpio = of_get_named_gpio_flags(np, prop_name, 0, NULL);
 	else
 		ilits->cs_gpio = -1;
 	input_info(true, ilits->dev, "%s ilits->cs_gpio : %d\n", __func__, ilits->cs_gpio);
 
-	prop = of_find_property(np, "iliteck,spi-mode", NULL);
+	ili_dt_prop(np, "spi-mode", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length) {
-		retval = of_property_read_u32(np, "iliteck,spi-mode", &value);
+		retval = of_property_read_u32(np, prop_name, &value);
 		if (retval < 0) {
-			input_err(true, ilits->dev, "%s Unable to read iliteck,spi-mode property\n", __func__);
+			input_err(true, ilits->dev, "%s Unable to read %s property\n", __func__, prop_name);
 			return retval;
 		}
 		ilits->spi_mode = value;
@@ -787,22 +913,37 @@ static int parse_dt(void)
 		ilits->spi_mode = 0;
 	}
 
-	prop = of_find_property(np, "iliteck,lcd_rst_delay", NULL);
+	ili_dt_prop(np, "lcd_rst_delay", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length) {
-		retval = of_property_read_u32(np, "iliteck,lcd_rst_delay", &value);
+		retval = of_property_read_u32(np, prop_name, &value);
 		if (retval < 0) {
-			input_err(true, ilits->dev, "%s Unable to read iliteck,lcd_rst_delay property\n", __func__);
+			input_err(true, ilits->dev, "%s Unable to read %s property\n", __func__, prop_name);
 			ilits->lcd_rst_delay = 0;
-		} else{
+		} else {
 			ilits->lcd_rst_delay = value;
 		}
 	} else {
 		ilits->lcd_rst_delay = 0;
 	}
-	input_info(true, ilits->dev, "%s: lcd_rst_delay : %d(us)\n", __func__, ilits->lcd_rst_delay);
 
+	ili_dt_prop(np, "poweroff-discharging-us", prop_name, sizeof(prop_name));
+	prop = of_find_property(np, prop_name, NULL);
+	if (prop && prop->length) {
+		retval = of_property_read_u32(np, prop_name, &value);
+		if (retval < 0) {
+			input_err(true, ilits->dev, "%s Unable to read %s property\n", __func__, prop_name);
+			return retval;
+		}
+		ilits->poweroff_discharging_us = value;
+	} else {
+		ilits->poweroff_discharging_us = 0;
+	}
 
-	if (of_property_read_u32_array(np, "iliteck,area-size", px_zone, 3)) {
+	input_info(true, ilits->dev, "%s: lcd_rst_delay : %d(us), poweroff_discharing_us:%d(us)\n", __func__,
+			ilits->lcd_rst_delay, ilits->poweroff_discharging_us);
+
+	if (of_property_read_u32_array(np, ili_dt_prop(np, "area-size", prop_name, sizeof(prop_name)), px_zone, 3)) {
 		input_err(true, ilits->dev, "%s : Failed to get zone's size\n", __func__);
 		ilits->area_indicator = 47;
 		ilits->area_navigation = 75;
@@ -815,11 +956,11 @@ static int parse_dt(void)
 	input_info(true, ilits->dev, "%s : zone's size - indicator:%d, navigation:%d, edge:%d\n",
 		__func__, ilits->area_indicator, ilits->area_navigation, ilits->area_edge);
 
-	ilits->enable_settings_aot = of_property_read_bool(np, "iliteck,enable_settings_aot");
-	ilits->enable_sysinput_enabled = of_property_read_bool(np, "iliteck,enable_sysinput_enabled");
-	ilits->support_ear_detect = of_property_read_bool(np, "iliteck,support_ear_detect_mode");
-	ilits->prox_lp_scan_enabled = of_property_read_bool(np, "iliteck,prox_lp_scan_enabled");
-	ilits->support_spay_gesture_mode = of_property_read_bool(np, "iliteck,support_spay_gesture_mode");
+	ilits->enable_settings_aot = of_property_read_bool(np, ili_dt_prop(np, "enable_settings_aot", prop_name, sizeof(prop_name)));
+	ilits->enable_sysinput_enabled = of_property_read_bool(np, ili_dt_prop(np, "enable_sysinput_enabled", prop_name, sizeof(prop_name)));
+	ilits->support_ear_detect = of_property_read_bool(np, ili_dt_prop(np, "support_ear_detect_mode", prop_name, sizeof(prop_name)));
+	ilits->prox_lp_scan_enabled = of_property_read_bool(np, ili_dt_prop(np, "prox_lp_scan_enabled", prop_name, sizeof(prop_name)));
+	ilits->support_spay_gesture_mode = of_property_read_bool(np, ili_dt_prop(np, "support_spay_gesture_mode", prop_name, sizeof(prop_name)));
 	input_info(true, ilits->dev, "%s : supprot: %s%s%s%s%s\n",
 				__func__, ilits->enable_settings_aot ? " AOT" : "",
 				ilits->enable_sysinput_enabled ? " SE" : "",
@@ -827,18 +968,21 @@ static int parse_dt(void)
 				ilits->support_spay_gesture_mode ? "SPAY" : "",
 				ilits->prox_lp_scan_enabled ? "LPSCAN" : "");
 
-//	ilits->pinctrl = pinctrl_get_select_default(ilits->dev);
-	ilits->pinctrl = devm_pinctrl_get(ilits->dev);
+	ilits->pinctrl = pinctrl_get_select_default(ilits->dev);
 	if (!IS_ERR(ilits->pinctrl)) {
 		ilits->pins_on_state = pinctrl_lookup_state(ilits->pinctrl, "pins_on_state");
+		if (IS_ERR(ilits->pins_on_state))
+			ilits->pins_on_state = pinctrl_lookup_state(ilits->pinctrl, "on_state");
 		if (IS_ERR(ilits->pins_on_state)) {
-			input_err(true, ilits->dev, "could not get pins pins_on_state (%li)\n",
+			input_err(true, ilits->dev, "could not get pins on_state (%li)\n",
 				PTR_ERR(ilits->pins_on_state));
 		}
 
 		ilits->pins_off_state = pinctrl_lookup_state(ilits->pinctrl, "pins_off_state");
+		if (IS_ERR(ilits->pins_off_state))
+			ilits->pins_off_state = pinctrl_lookup_state(ilits->pinctrl, "off_state");
 		if (IS_ERR(ilits->pins_off_state)) {
-			input_err(true, ilits->dev, "could not get pins pins_off_state (%li)\n",
+			input_err(true, ilits->dev, "could not get pins off_state (%li)\n",
 				PTR_ERR(ilits->pins_off_state));
 		}
 	} else {
@@ -848,90 +992,6 @@ static int parse_dt(void)
 
 	return 0;
 }
-
-#ifdef CONFIG_VBUS_NOTIFIER
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-static int otg_flag = 0;
-#endif
-#endif
-
-#ifdef CONFIG_VBUS_NOTIFIER
-#ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
-static int ilitek_ccic_notification(struct notifier_block *nb,
-	   unsigned long action, void *data)
-{
-
-	PD_NOTI_USB_STATUS_TYPEDEF usb_status = *(PD_NOTI_USB_STATUS_TYPEDEF *)data;
-
-	if (usb_status.dest != PDIC_NOTIFY_DEV_USB) {
-		return 0;
-	}
-
-	switch (usb_status.drp) {
-	case USB_STATUS_NOTIFY_ATTACH_DFP:
-		otg_flag = 1;
-		input_info(true, ilits->dev, "%s otg_flag %d\n", __func__, otg_flag);
-		break;
-	case USB_STATUS_NOTIFY_DETACH:
-		otg_flag = 0;
-		input_info(true, ilits->dev, "%s otg_flag %d\n", __func__, otg_flag);
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-#endif
-static int ilitek_vbus_notification(struct notifier_block *nb,
-		unsigned long cmd, void *data)
-{
-	vbus_status_t vbus_type = *(vbus_status_t *) data;
-	int ret = 0;
-
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-	input_info(true, ilits->dev, "%s otg_flag=%d\n", __func__, otg_flag);
-#endif
-	input_info(true, ilits->dev, "%s cmd=%lu, vbus_type=%d\n", __func__, cmd, vbus_type);
-
-
-	switch (vbus_type) {
-	case STATUS_VBUS_HIGH:/* vbus_type == 2 */
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
-		if (!otg_flag)
-			ilits->usb_plug_status = USB_PLUG_ATTACHED;
-		else
-			ret = -1;
-#else
-		ilits->usb_plug_status = USB_PLUG_ATTACHED;
-#endif
-		break;
-	case STATUS_VBUS_LOW:/* vbus_type == 1 */
-		ilits->usb_plug_status = USB_PLUG_DETACHED;
-		break;
-	default:
-		ret = -1;
-		break;
-	}
-
-	if (ret < 0)
-		return 0;
-
-	if (ilits->power_status == POWER_OFF_STATUS) {
-		input_info(true, ilits->dev, "%s  now power off status, it'll setting after screen on(%d)\n",
-				__func__ ,ilits->usb_plug_status);
-		return 0;
-	}
-
-	mutex_lock(&ilits->touch_mutex);
-
-	ret = ili_ic_func_ctrl("plug", !ilits->usb_plug_status);
-	if (ret < 0)
-		input_err(true, ilits->dev, "%s USB_PLUG set failed(%d)\n",
-					__func__, ilits->usb_plug_status);
-	mutex_unlock(&ilits->touch_mutex);
-	return 0;
-}
-#endif
 
 static int ilitek_plat_probe(void)
 {
@@ -981,15 +1041,22 @@ static int ilitek_plat_probe(void)
 	/* add_for_charger_end */
 #endif
 #endif
-
-#ifdef CONFIG_VBUS_NOTIFIER
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+	INIT_DELAYED_WORK(&ilits->work_vbus, ilitek_vbus_work);
 #ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
 	manager_notifier_register(&ilits->ccic_nb, ilitek_ccic_notification,
 			MANAGER_NOTIFY_PDIC_INITIAL);
 #endif
-	vbus_notifier_register(&ilits->vbus_nb, ilitek_vbus_notification,
-			VBUS_NOTIFY_DEV_CHARGER);
+	vbus_notifier_register(&ilits->vbus_nb, ilitek_vbus_notifier, VBUS_NOTIFY_DEV_CHARGER);
 #endif
+
+#if IS_ENABLED(CONFIG_FB)
+	ilits->fb_notif.notifier_call = ilitek_fb_notifier_callback;
+	if (fb_register_client(&ilits->fb_notif))
+		input_err(true, ilits->dev, "register fb_notifier failed\n");
+#endif
+
+	ili_ic_lpwg_dump_buf_init();
 
 	input_info(true, ilits->dev, "%s ILITEK Driver loaded successfully!", __func__);
 	return 0;
@@ -1010,7 +1077,7 @@ static int ilitek_tp_pm_resume(struct device *dev)
 	complete(&ilits->pm_completion);
 	return 0;
 }
-
+/*
 static int ilitek_plat_remove(void)
 {
 	input_info(true, ilits->dev, "%s remove plat dev\n", __func__);
@@ -1029,7 +1096,7 @@ static int ilitek_plat_shutdown(void)
 
 	return 0;
 }
-
+*/
 static const struct dev_pm_ops tp_pm_ops = {
 	.suspend = ilitek_tp_pm_suspend,
 	.resume = ilitek_tp_pm_resume,
@@ -1037,6 +1104,7 @@ static const struct dev_pm_ops tp_pm_ops = {
 
 static const struct of_device_id tp_match_table[] = {
 	{.compatible = "iliteck,ili9882x-spi"},
+	{.compatible = "ilitek,ili9881x-spi"},
 	{},
 };
 
@@ -1046,8 +1114,9 @@ static struct ilitek_hwif_info hwif = {
 	.name = TDDI_DEV_ID,
 	.of_match_table = of_match_ptr(tp_match_table),
 	.plat_probe = ilitek_plat_probe,
-	.plat_shutdown = ilitek_plat_shutdown,
-	.plat_remove = ilitek_plat_remove,
+/* Shutdown is called from the SemInputDeviceManagerService. */
+//	.plat_shutdown = ilitek_plat_shutdown,
+//	.plat_remove = ilitek_plat_remove,
 	.pm = &tp_pm_ops,
 };
 

@@ -19,8 +19,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
-#include "ili9881x_fw.h"
 #include "ili9881x.h"
+#if IS_ENABLED(CONFIG_FB)
+#include <linux/fb.h>
+#endif
 
 /* Debug level */
 bool debug_en = DEBUG_OUTPUT;
@@ -90,7 +92,7 @@ void ilitek_pin_control(bool pin_set)
 	if (IS_ERR(ilits->pinctrl))
 		return;
 
-	ilits->pinctrl->state = NULL;
+//	ilits->pinctrl->state = NULL;
 	if (pin_set) {
 		if (!IS_ERR(ilits->pins_on_state)) {
 			retval = pinctrl_select_state(ilits->pinctrl, ilits->pins_on_state);
@@ -229,7 +231,7 @@ void ili_print_info(void)
 
 		input_info(true, ilits->dev,
 				"tc:%d ver:%02d%02d%02d%02d// #%d %d\n",
-				ilits->touch_count, ilits->fw_cur_info[2],ilits->fw_cur_info[3],ilits->fw_cur_info[4],
+				ilits->touch_count, ilits->fw_cur_info[2], ilits->fw_cur_info[3], ilits->fw_cur_info[4],
 				ilits->fw_cur_info[5], ilits->print_info_cnt_open, ilits->print_info_cnt_release);
 
 }
@@ -273,7 +275,7 @@ int ili_wq_esd_spi_check(void)
 	ret = ilits->spi_write_then_read(ilits->spi, &tx, 1, &rx, 1);
 	ILI_DBG("%s spi esd check = 0x%x\n", __func__, ret);
 	if (ret == DO_SPI_RECOVER) {
-		input_err(true, ilits->dev, "%s ret = 0x%x\n", ret, __func__);
+		input_err(true, ilits->dev, "%s ret = 0x%x\n", __func__, ret);
 		return -1;
 	}
 	return 0;
@@ -299,9 +301,17 @@ static void ilitek_tddi_wq_esd_check(struct work_struct *work)
 
 static int read_power_status(u8 *buf)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
+	ILI_DBG("%s : skip handle\n", __func__);
+
+	return 0;
+#else
 	struct file *f = NULL;
-	loff_t pos = 0;
+	mm_segment_t old_fs;
 	ssize_t byte = 0;
+
+	old_fs = get_fs();
+	set_fs(get_ds());
 
 	f = filp_open(POWER_STATUS_PATH, O_RDONLY, 0);
 	if (ERR_ALLOC_MEM(f)) {
@@ -309,12 +319,15 @@ static int read_power_status(u8 *buf)
 		return -1;
 	}
 
-	byte = kernel_read(f, buf, 20, &pos);
+	f->f_op->llseek(f, 0, SEEK_SET);
+	byte = f->f_op->read(f, buf, 20, &f->f_pos);
 
 	ILI_DBG("%s Read %d bytes\n", __func__, (int)byte);
 
+	set_fs(old_fs);
 	filp_close(f, NULL);
 	return 0;
+#endif
 }
 
 static void ilitek_tddi_wq_bat_check(struct work_struct *work)
@@ -397,12 +410,13 @@ void set_current_ic_mode(int mode)
 
 	input_info(true, ilits->dev, "%s,mode:%d\n", __func__, mode);
 
-	if (ilits->power_status == POWER_OFF_STATUS) {
+	if ((ilits->power_status == POWER_OFF_STATUS) || ilits->tp_shutdown) {
 		input_info(true, ilits->dev, "%s power off satus\n", __func__);
 		return;
 	}
 	switch (mode) {
 	case SET_MODE_NORMAL:
+		/* restore sec func */
 		if (!ilits->dead_zone_enabled) {
 			ret = ili_ic_func_ctrl("dead_zone_ctrl", DEAD_ZONE_DISABLE);
 			if (ret < 0)
@@ -415,25 +429,35 @@ void set_current_ic_mode(int mode)
 				input_err(true, ilits->dev, "%s SIP_MODE_ENABLE failed\n", __func__);
 		}
 
+		if (ilits->high_sensitivity_mode_enabled) {
+			ret = ili_ic_func_ctrl("high_sensitivity_mode", HIGH_SENSITIVITY_ENABLE);
+			if (ret < 0)
+				input_err(true, ilits->dev, "%s HIGH_SENSITIVITY_ENABLE failed\n", __func__);
+		}
+
 		if (ilits->game_mode_enabled) {
 			ret = ili_ic_func_ctrl("lock_point", GAME_MODE_ENABLE);
 			if (ret < 0)
 				input_err(true, ilits->dev, "%s GAME_MODE_ENABLE failed\n", __func__);
 		}
 
+		if (ilits->clear_cover_mode_enabled > 0) {
+			ret = ili_ic_func_ctrl("cover_mode", ilits->clear_cover_type);
+			if (ret < 0)
+				input_err(true, ilits->dev, "%s clear_cover_mode_enabled failed\n", __func__);
+		}
+
 		if (ilits->prox_face_mode) {
 			ret = ili_ic_func_ctrl("proximity", ilits->prox_face_mode);
 			if (ret < 0)
-				input_err(true, ilits->dev, "%s ear detect enabled fail(%d)\n",
-							__func__, ilits->prox_face_mode);
+				input_err(true, ilits->dev, "%s ear detect enabled fail(%d)\n", __func__, ilits->prox_face_mode);
 		}
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
 		if (ilits->usb_plug_status == USB_PLUG_ATTACHED) {
-			ret = ili_ic_func_ctrl("plug", !ilits->usb_plug_status);
-			if (ret < 0)
-				input_err(true, ilits->dev, "%s USB_PLUG_ATTACHED failed(%d)\n",
-							__func__, ilits->usb_plug_status);
+			ilitek_set_vbus();
 		}
-		
+#endif
+
 	break;
 	case SET_MODE_PROXIMTY_LCDOFF:
 		if (ilits->prox_face_mode && ilits->tp_suspend) {
@@ -477,20 +501,68 @@ static void ilitek_tddi_wq_init(void)
 
 }
 
+#if IS_ENABLED(CONFIG_FB)
+static void ilitek_fb_resume_work(struct work_struct *work)
+{
+	if ((ilits->screen_off_sate != TP_EARLY_RESUME) && (ilits->screen_off_sate != TP_RESUME))
+		ili_sleep_handler(TP_EARLY_RESUME);
+	ili_sleep_handler(TP_RESUME);
+}
+
+int ilitek_fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct ilitek_ts_data *ilits = container_of(self, struct ilitek_ts_data, fb_notif);
+	struct fb_event *evdata = data;
+	int *blank;
+
+	if (ilits->sysinput_seen)
+		return 0;
+
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_POWERDOWN:
+			cancel_work_sync(&ilits->fb_resume_work);
+			ili_sleep_handler(TP_EARLY_SUSPEND);
+			break;
+		case FB_BLANK_UNBLANK:
+			schedule_work(&ilits->fb_resume_work);
+			break;
+		default:
+			break;
+		}
+	}
+	return 0;
+}
+#endif
+
 int ili_sleep_handler(int mode)
 {
 	int ret = 0;
 	bool sense_stop = true;
+	u8 lpwg_dump[5] = {0};
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+	cancel_delayed_work_sync(&ilits->work_vbus);
+#endif
+	cancel_delayed_work_sync(&ilits->work_read_info);
 
 	mutex_lock(&ilits->touch_mutex);
 	atomic_set(&ilits->tp_sleep, START);
 
-	if (atomic_read(&ilits->fw_stat) ||
-		atomic_read(&ilits->mp_stat)) {
-		input_info(true, ilits->dev, "%s fw upgrade or mp still running, ignore sleep requst\n", __func__);
+	if (atomic_read(&ilits->fw_stat) || atomic_read(&ilits->mp_stat)) {
+		input_info(true, ilits->dev, "%s fw upgrade or mp still running, enter ic off mode\n", __func__);
+		if (mode == TP_EARLY_SUSPEND) {
+			ili_wq_ctrl(WQ_ESD, DISABLE);
+			ili_wq_ctrl(WQ_BAT, DISABLE);
+			ili_irq_disable();
+			ilitek_pin_control(false);
+			ilits->power_status = POWER_OFF_STATUS;
+			ilits->sleep_handler_mode = TP_EARLY_SUSPEND;
+		}
 		atomic_set(&ilits->tp_sleep, END);
 		mutex_unlock(&ilits->touch_mutex);
-		return 0;
+		return -1;
 	}
 
 	if (ilits->sleep_handler_mode == mode) {
@@ -520,15 +592,21 @@ int ili_sleep_handler(int mode)
 			if (ili_ic_check_busy(50, 20) < 0)
 				input_err(true, ilits->dev, "%s Check busy timeout during suspend\n", __func__);
 		}
-		input_info(true, ilits->dev, "%s prox_power_off:%d, prox_face_mode:%d, gesture:%d, ges_sym:0x%x, incell_power_state:%d\n",
+		input_info(true, ilits->dev, "%s prox_power_off:%ld, prox_face_mode:%d, gesture:%d, ges_sym.double_tap:0x%x, incell_power_state:%d\n",
 				__func__, ilits->prox_power_off, ilits->prox_face_mode,
-				ilits->gesture, ilits->ges_sym, ilits->incell_power_state);
+				ilits->gesture, ilits->ges_sym.double_tap, ilits->incell_power_state);
 		if (ilits->prox_face_mode || ilits->gesture) {
 			ili_incell_power_control(ENABLE);
 			ilits->power_status = LP_AOT_STATUS;
 			ili_switch_tp_mode(P5_X_FW_GESTURE_MODE);
 			ili_irq_wake_enable();
 			ili_irq_enable();
+
+			if (ilits->lp_dump_enable) {
+				lpwg_dump[0] = ILITEK_LPDUMP_LCDOFF;
+				ili_ic_lpwg_dump_buf_write(lpwg_dump);
+			}
+
 			if (ilits->prox_face_mode) {
 				ret = ili_ic_func_ctrl("sleep", SLEEP_IN);
 				if (ret < 0)
@@ -552,9 +630,17 @@ int ili_sleep_handler(int mode)
 		ilits->sleep_handler_mode = mode;
 		break;
 	case TP_EARLY_RESUME:
-		input_info(true, ilits->dev, "%s ilits->power_status:%d, ges_sym:0x%x\n",
-				__func__, ilits->power_status, ilits->ges_sym);
-		if ((ilits->power_status != POWER_OFF_STATUS) && (ilits->power_status != POWER_ON_STATUS)) {
+		input_info(true, ilits->dev, "%s ilits->power_status:%d, ges_sym.double_tap:0x%x\n",
+				__func__, ilits->power_status, ilits->ges_sym.double_tap);
+		if ((ilits->power_status != POWER_OFF_STATUS) && (ilits->power_status != POWER_ON_STATUS)
+			&& !ilits->tp_shutdown) {
+
+			if (ilits->lp_dump_enable) {
+				ili_ic_lpwg_get();
+				lpwg_dump[0] = ILITEK_LPDUMP_LCDON;
+				ili_ic_lpwg_dump_buf_write(lpwg_dump);
+			}
+
 			ili_irq_wake_disable();
 			if (ilits->power_status == LP_PROX_STATUS) {
 				ilits->actual_tp_mode = P5_X_FW_AP_MODE;
@@ -566,8 +652,8 @@ int ili_sleep_handler(int mode)
 				ilits->prox_power_off = 0;
 				ilits->prox_lp_scan_mode_enabled = false;
 			}
-			if (ilits->power_status != LP_FACTORY_STATUS) {
-				if (ilits->chip->id == ILI7807_CHIP) {
+			if ((ilits->power_status != LP_FACTORY_STATUS) && !ilits->tp_shutdown) {
+				if ((ilits->chip->id == ILI7807_CHIP) || (ilits->chip->id == ILI9882_CHIP)) {
 					ilitek_pin_control(false);
 					usleep_range(5 * 1000, 5 * 1000);
 					ili_incell_power_control(DISABLE);
@@ -645,7 +731,7 @@ int ili_fw_upgrade_handler(void *data)
 	atomic_set(&ilits->fw_stat, START);
 
 	ilits->fw_update_stat = FW_STAT_INIT;
-	ret = ili_fw_upgrade(ilits->fw_open);
+	ret = ili_fw_upgrade();
 	if (ret != 0) {
 		input_info(true, ilits->dev, "%s FW upgrade fail\n", __func__);
 		ilits->fw_update_stat = FW_UPDATE_FAIL;
@@ -665,7 +751,7 @@ int ili_fw_upgrade_handler(void *data)
 		ilits->fw_update_stat = FW_UPDATE_PASS;
 	}
 
-	if (!ilits->boot) {
+	if ((!ilits->boot) && (ilits->fw_update_stat == FW_UPDATE_PASS)) {
 		ilits->boot = true;
 		input_info(true, ilits->dev, "%s Registre touch to input subsystem\n", __func__);
 		ili_input_register();
@@ -876,7 +962,7 @@ int ili_report_handler(void)
 		if (ret == DO_SPI_RECOVER) {
 			ili_ic_get_pc_counter(DO_SPI_RECOVER);
 
-			input_info(true, ilits->dev, "%s prox_power_off:%d, ilits->tp_suspend:%d, ilits->actual_tp_mode:%d, prox_face_mode:%d, gesture:%d,\n",
+			input_info(true, ilits->dev, "%s prox_power_off:%ld, ilits->tp_suspend:%d, ilits->actual_tp_mode:%d, prox_face_mode:%d, gesture:%d,\n",
 				__func__, ilits->prox_power_off, ilits->tp_suspend, ilits->actual_tp_mode,
 				ilits->prox_face_mode, ilits->gesture);
 
@@ -929,6 +1015,7 @@ int ili_report_handler(void)
 	case P5_X_DEMO_AXIS_PACKET_ID:
 		ili_report_ap_mode(&trdata[P5_X_DEMO_MODE_PACKET_INFO_LEN],
 			(rlen - P5_X_DEMO_MODE_PACKET_INFO_LEN - P5_X_DEMO_MODE_AXIS_LEN - P5_X_DEMO_MODE_STATE_INFO));
+		ilitek_tddi_touch_send_debug_data(trdata, rlen);
 		break;
 	case P5_X_DEBUG_AXIS_PACKET_ID:
 		ili_report_debug_mode(trdata, rlen);
@@ -1025,112 +1112,30 @@ int ili_reset_ctrl(int mode)
 	return ret;
 }
 
-static int ilitek_get_tp_module(void)
+static void ili_read_info_work(struct work_struct *work)
 {
-	/*
-	 * TODO: users should implement this function
-	 * if there are various tp modules been used in projects.
-	 */
+	static int retry;
 
-	return MODEL_DEF;
-}
-
-static void ili_update_tp_module_info(void)
-{
-	int module;
-
-	module = ilitek_get_tp_module();
-
-	switch (module) {
-	case MODEL_CSOT:
-		ilits->md_name = "CSOT";
-		ilits->md_fw_filp_path = CSOT_FW_FILP_PATH;
-		ilits->md_fw_rq_path = CSOT_FW_REQUEST_PATH;
-		ilits->md_ini_path = CSOT_INI_NAME_PATH;
-		ilits->md_ini_rq_path = CSOT_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_CSOT;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_CSOT);
-		break;
-	case MODEL_AUO:
-		ilits->md_name = "AUO";
-		ilits->md_fw_filp_path = AUO_FW_FILP_PATH;
-		ilits->md_fw_rq_path = AUO_FW_REQUEST_PATH;
-		ilits->md_ini_path = AUO_INI_NAME_PATH;
-		ilits->md_ini_rq_path = AUO_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_AUO;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_AUO);
-		break;
-	case MODEL_BOE:
-		ilits->md_name = "BOE";
-		ilits->md_fw_filp_path = BOE_FW_FILP_PATH;
-		ilits->md_fw_rq_path = BOE_FW_REQUEST_PATH;
-		ilits->md_ini_path = BOE_INI_NAME_PATH;
-		ilits->md_ini_rq_path = BOE_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_BOE;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_BOE);
-		break;
-	case MODEL_INX:
-		ilits->md_name = "INX";
-		ilits->md_fw_filp_path = INX_FW_FILP_PATH;
-		ilits->md_fw_rq_path = INX_FW_REQUEST_PATH;
-		ilits->md_ini_path = INX_INI_NAME_PATH;
-		ilits->md_ini_rq_path = INX_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_INX;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_INX);
-		break;
-	case MODEL_DJ:
-		ilits->md_name = "DJ";
-		ilits->md_fw_filp_path = DJ_FW_FILP_PATH;
-		ilits->md_fw_rq_path = DJ_FW_REQUEST_PATH;
-		ilits->md_ini_path = DJ_INI_NAME_PATH;
-		ilits->md_ini_rq_path = DJ_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_DJ;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_DJ);
-		break;
-	case MODEL_TXD:
-		ilits->md_name = "TXD";
-		ilits->md_fw_filp_path = TXD_FW_FILP_PATH;
-		ilits->md_fw_rq_path = TXD_FW_REQUEST_PATH;
-		ilits->md_ini_path = TXD_INI_NAME_PATH;
-		ilits->md_ini_rq_path = TXD_FW_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_TXD;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_TXD);
-		break;
-	case MODEL_TM:
-		ilits->md_name = "TM";
-		ilits->md_fw_filp_path = TM_FW_REQUEST_PATH;
-		ilits->md_fw_rq_path = TM_FW_REQUEST_PATH;
-		ilits->md_ini_path = TM_INI_NAME_PATH;
-		ilits->md_ini_rq_path = TM_INI_REQUEST_PATH;
-		ilits->md_fw_ili = CTPM_FW_TM;
-		ilits->md_fw_ili_size = sizeof(CTPM_FW_TM);
-		break;
-	default:
-		break;
+	if (atomic_read(&ilits->fw_stat) != END) {
+		input_err(true, ilits->dev, "%s: fw update didn't finish yet.\n", __func__);
+		if (retry++ < 50)
+			schedule_delayed_work(&ilits->work_read_info, msecs_to_jiffies(300));
+		return;
+	} else {
+		input_info(true, ilits->dev, "%s: fw update finished.\n", __func__);
 	}
 
-	if (module == 0 || ilits->md_fw_ili_size < ILI_FILE_HEADER) {
-		input_err(true, ilits->dev, "%s Couldn't find any tp modules, applying default settings\n", __func__);
-		ilits->md_name = "DEF";
-		ilits->md_fw_filp_path = DEF_FW_FILP_PATH;
-		ilits->md_fw_rq_path = (char *)ilits->fw_name;
-		ilits->md_ini_path = DEF_INI_NAME_PATH;
-		ilits->md_ini_rq_path = DEF_INI_REQUEST_PATH;
-		/*Fw data loaded ilitek__get_fw_image function
-		 *ilits->md_fw_ili = CTPM_FW_DEF;
-		 *ilits->md_fw_ili_size = sizeof(CTPM_FW_DEF);
-		 */
-	}
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
+	input_err(true, ilits->dev, "%s: factory bin : skip ili_read_info_onboot call\n", __func__);
+#else
+	ili_read_info_onboot(&ilits->sec);
+#endif
 
-	input_info(true, ilits->dev, "%s Found %s module: ini path = %s, fw path = (%s, %s, %d)\n",
-			__func__,
-			ilits->md_name,
-			ilits->md_ini_path,
-			ilits->md_fw_filp_path,
-			ilits->md_fw_rq_path,
-			ilits->md_fw_ili_size);
-
-	ilits->tp_module = module;
+	cancel_delayed_work(&ilits->work_print_info);
+	ilits->print_info_cnt_open = 0;
+	ilits->print_info_cnt_release = 0;
+	if (!ili_shutdown_is_on_going_tsp)
+		schedule_work(&ilits->work_print_info.work);
 }
 
 int ili_tddi_init(void)
@@ -1162,6 +1167,10 @@ int ili_tddi_init(void)
 
 	ili_ic_init();
 	ilitek_tddi_wq_init();
+#if IS_ENABLED(CONFIG_FB)
+	INIT_WORK(&ilits->fb_resume_work, ilitek_fb_resume_work);
+#endif
+	INIT_DELAYED_WORK(&ilits->work_read_info, ili_read_info_work);
 
 	/* Must do hw reset once in first time for work normally if tp reset is avaliable */
 #if !TDDI_RST_BIND
@@ -1188,10 +1197,8 @@ int ili_tddi_init(void)
 
 	if (ili_ic_get_info() < 0)
 		input_err(true, ilits->dev, "%s Chip info is incorrect\n", __func__);
-
-	ili_update_tp_module_info();
-
-	ili_get_ini_path();
+	ilits->fw_index = ILITEK_TSP_FW_IDX_BIN;
+	ilits->md_fw_rq_path = (char *)ilits->fw_name;
 
 	ili_node_init();
 
@@ -1233,13 +1240,11 @@ int ili_tddi_init(void)
 	ilits->boot = true;
 #endif
 
-#if 1//LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-	ilits->ws = wakeup_source_register(ilits->dev, "ili_wakelock"); //4.19
-#else
-	ilits->ws = wakeup_source_register("ili_wakelock"); //4.9
-#endif
+	ilits->ws = wakeup_source_register(ilits->dev, "ili_wakelock");
 	if (!ilits->ws)
 		input_err(true, ilits->dev, "%s wakeup source request failed\n", __func__);
+
+	schedule_delayed_work(&ilits->work_read_info, msecs_to_jiffies(300));
 
 	return 0;
 }
@@ -1251,11 +1256,27 @@ void ili_dev_remove(void)
 	if (!ilits)
 		return;
 
+	cancel_delayed_work_sync(&ilits->work_read_info);
+
 	cancel_delayed_work_sync(&ilits->work_print_info);
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+	cancel_delayed_work_sync(&ilits->work_vbus);
+#endif
+
+#if IS_ENABLED(CONFIG_FB)
+	fb_unregister_client(&ilits->fb_notif);
+	cancel_work_sync(&ilits->fb_resume_work);
+#endif
 
 	ili_shutdown_is_on_going_tsp = true;
 	ilits->power_status = POWER_OFF_STATUS;
-
+	if (ilits->tp_ums_fw.data != NULL) {
+		vfree(ilits->tp_ums_fw.data);
+	}
+	if (ilits->tp_bin_fw.data != NULL) {
+		vfree(ilits->tp_bin_fw.data);
+	}
 	ili_irq_wake_disable();
 	ili_irq_disable();
 	ilitek_pin_control(false);
@@ -1273,7 +1294,8 @@ void ili_dev_remove(void)
 		flush_workqueue(bat_wq);
 		destroy_workqueue(bat_wq);
 	}
-	ili_sec_fn_remove();
+/* Cannot remove sysfs_remove_group when using sevice shutdown(enabled_store) */
+//	ili_sec_fn_remove();
 	if (ilits->ws)
 		wakeup_source_unregister(ilits->ws);
 
@@ -1286,7 +1308,8 @@ void ili_dev_remove(void)
 
 	kfree(ilits->tr_buf);
 	kfree(ilits->gcoord);
-	ili_interface_dev_exit(ilits);
+/* Cannot free "&info" when using sevice shutdown(enabled_store) */
+//	ili_interface_dev_exit(ilits);
 }
 
 int ili_dev_init(struct ilitek_hwif_info *hwif)

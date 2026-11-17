@@ -20,14 +20,12 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
-#include <linux/namei.h>
-#include <linux/fs.h>
 #include "ili9881x.h"
 
 #define USER_STR_BUFF		PAGE_SIZE
 #define IOCTL_I2C_BUFF		PAGE_SIZE
 #define ILITEK_IOCTL_MAGIC	100
-#define ILITEK_IOCTL_MAXNR	27
+#define ILITEK_IOCTL_MAXNR	83
 
 #define ILITEK_IOCTL_I2C_WRITE_DATA		_IOWR(ILITEK_IOCTL_MAGIC, 0, u8*)
 #define ILITEK_IOCTL_I2C_SET_WRITE_LENGTH	_IOWR(ILITEK_IOCTL_MAGIC, 1, int)
@@ -61,6 +59,9 @@
 #define ILITEK_IOCTL_DDI_WRITE			_IOWR(ILITEK_IOCTL_MAGIC, 26, u8*)
 #define ILITEK_IOCTL_DDI_READ			_IOWR(ILITEK_IOCTL_MAGIC, 27, u8*)
 
+#define ILITEK_IOCTL_OUTPUT_MODE_SET	_IOWR(ILITEK_IOCTL_MAGIC, 80, u8*)
+#define ILITEK_IOCTL_MP_TEST_ITEM_SET	_IOWR(ILITEK_IOCTL_MAGIC, 81, u8*)
+
 #ifdef CONFIG_COMPAT
 #define ILITEK_COMPAT_IOCTL_I2C_WRITE_DATA		_IOWR(ILITEK_IOCTL_MAGIC, 0, compat_uptr_t)
 #define ILITEK_COMPAT_IOCTL_I2C_SET_WRITE_LENGTH	_IOWR(ILITEK_IOCTL_MAGIC, 1, compat_uptr_t)
@@ -93,6 +94,9 @@
 #define ILITEK_COMPAT_IOCTL_WRAPPER_RW			_IOWR(ILITEK_IOCTL_MAGIC, 25, compat_uptr_t)
 #define ILITEK_COMPAT_IOCTL_DDI_WRITE			_IOWR(ILITEK_IOCTL_MAGIC, 26, compat_uptr_t)
 #define ILITEK_COMPAT_IOCTL_DDI_READ			_IOWR(ILITEK_IOCTL_MAGIC, 27, compat_uptr_t)
+
+#define ILITEK_COMPAT_IOCTL_OUTPUT_MODE_SET		_IOWR(ILITEK_IOCTL_MAGIC, 80, compat_uptr_t)
+#define ILITEK_COMPAT_IOCTL_MP_TEST_ITEM_SET	_IOWR(ILITEK_IOCTL_MAGIC, 81, compat_uptr_t)
 #endif
 
 struct record_state {
@@ -175,42 +179,6 @@ struct file_buffer {
 	int32_t max_size;
 };
 
-static int file_write(struct file_buffer *file, bool new_open)
-{
-	struct file *f = NULL;
-	loff_t pos;
-
-	if (file->ptr == NULL) {
-		input_err(true, ilits->dev, "%s str is invaild\n", __func__);
-		return -1;
-	}
-/*
-	if (file->fname == NULL) {
-		input_err(true, ilits->dev, "%s file name is invaild\n", __func__);
-		return -1;
-	}
-*/
-	if (file->flen >= file->max_size) {
-		input_err(true, ilits->dev, "%s The length saved to file is too long !\n", __func__);
-		return -1;
-	}
-
-	if (new_open)
-		f = filp_open(file->fname, O_WRONLY | O_CREAT | O_TRUNC, 644);
-	else
-		f = filp_open(file->fname, O_WRONLY | O_CREAT | O_APPEND, 644);
-
-	if (ERR_ALLOC_MEM(f)) {
-		input_err(true, ilits->dev, "%s Failed to open %s file\n", __func__, file->fname);
-		return -1;
-	}
-
-	pos = 0;
-	kernel_write(f, file->ptr, file->flen, &pos);
-	filp_close(f, NULL);
-	return 0;
-}
-
 static int ilitek_debug_node_buff_control(bool open)
 {
 	int i, ret;
@@ -252,106 +220,6 @@ out:
 	}
 	ipio_kfree((void **)&ilits->dbl);
 	return ret;
-}
-
-static int debug_mode_get_data(struct file_buffer *file, u8 type, u32 frame_count)
-{
-	int ret;
-	u8 cmd[2] = { 0 }, row, col;
-	s16 temp;
-	unsigned char *ptr;
-	int j;
-	u16 write_index = 0;
-
-	ilitek_debug_node_buff_control(DISABLE);
-
-	ilits->dbf = 0;
-	row = ilits->ych_num;
-	col = ilits->xch_num;
-	mutex_lock(&ilits->touch_mutex);
-
-	cmd[0] = 0xFA;
-	cmd[1] = type;
-	ret = ilits->wrapper(cmd, 2, NULL, 0, ON, OFF);
-
-	if (ilitek_debug_node_buff_control(ENABLE) < 0) {
-		input_err(true, ilits->dev, "%s Failed to allocate debug buf\n", __func__);
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	mutex_unlock(&ilits->touch_mutex);
-
-	if (ret < 0) {
-		input_err(true, ilits->dev, "%s Write 0xFA,0x%x failed\n", __func__, type);
-		goto out;
-	}
-
-	while (write_index < frame_count) {
-		file->wlen = 0;
-		input_info(true, ilits->dev, "%s frame = %d,index = %d,count = %d\n",
-			__func__, write_index, ilits->odi, ilits->dbf);
-		if (!wait_event_interruptible_timeout(ilits->inq, ilits->dbl[ilits->odi].mark,
-				msecs_to_jiffies(3000))) {
-			input_err(true, ilits->dev, "%s debug mode get data timeout!\n", __func__);
-			goto out;
-		}
-
-		mutex_lock(&ilits->touch_mutex);
-
-		memset(file->ptr, 0, file->max_size);
-		file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "\n\nFrame%d,",
-			write_index);
-		for (j = 0; j < col; j++)
-			file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "[X%d] ,", j);
-		ptr = &ilits->dbl[ilits->odi].data[35];
-		for (j = 0; j < row * col; j++, ptr += 2) {
-			temp = (*ptr << 8) + *(ptr + 1);
-			if (j % col == 0)
-				file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen),
-					"\n[Y%d] ,", (j / col));
-			file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "%d, ", temp);
-		}
-		file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "\n[X] ,");
-		for (j = 0; j < row + col; j++, ptr += 2) {
-			temp = (*ptr << 8) + *(ptr + 1);
-			if (j == col)
-				file->wlen +=
-					snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "\n[Y] ,");
-			file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "%d, ", temp);
-		}
-		file_write(file, false);
-		write_index++;
-
-		mutex_unlock(&ilits->touch_mutex);
-
-		ilits->dbl[ilits->odi].mark = false;
-		ilits->odi = ((ilits->odi + 1) % TR_BUF_LIST_SIZE);
-	}
-out:
-	ilitek_debug_node_buff_control(DISABLE);
-	return ret;
-}
-
-int dev_mkdir(char *name, umode_t mode)
-{
-	struct dentry *dentry;
-	struct path path;
-	int err;
-
-	input_info(true, ilits->dev, "%s mkdir: %s\n", __func__, name);
-
-	dentry = kern_path_create(AT_FDCWD, name, &path, LOOKUP_DIRECTORY);
-	if (IS_ERR(dentry))
-		return PTR_ERR(dentry);
-
-	if (!IS_POSIXACL(d_inode(path.dentry)))
-		mode &= ~current_umask();
-
-	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
-	done_path_create(&path, dentry);
-
-	return err;
 }
 
 static ssize_t ilitek_proc_get_delta_data_read(struct file *pFile, char __user *buf, size_t size, loff_t *pos)
@@ -417,7 +285,7 @@ static ssize_t ilitek_proc_get_delta_data_read(struct file *pFile, char __user *
 	for (i = 4, index = 0; i < row * col * 2 + 4; i += 2, index++)
 		delta[index] = (data[i] << 8) + data[i + 1];
 
-	len = snprintf(g_user_buf + size, PAGE_SIZE - len, "======== Deltadata ========\n");
+	len = snprintf(g_user_buf, PAGE_SIZE, "======== Deltadata ========\n");
 	input_info(true, ilits->dev, "%s ======== Deltadata ========\n", __func__);
 
 	len += snprintf(g_user_buf + len, PAGE_SIZE - len,
@@ -661,7 +529,7 @@ static ssize_t ilitek_proc_rw_tp_reg_write(struct file *filp, const char *buff, 
 	char cmd[256] = { 0 };
 	u32 count = 0;
 
-	if ((size - 1) > sizeof(cmd)) {
+	if (size == 0 || size > sizeof(cmd)) {
 		input_err(true, ilits->dev, "%s ERROR! input length is larger than local buffer\n", __func__);
 		return -1;
 	}
@@ -676,7 +544,7 @@ static ssize_t ilitek_proc_rw_tp_reg_write(struct file *filp, const char *buff, 
 		}
 	}
 	token = cur = cmd;
-	while ((token = strsep(&cur, ",")) != NULL) {
+	while (count < ARRAY_SIZE(rw_reg) && (token = strsep(&cur, ",")) != NULL) {
 		rw_reg[count] = ili_str2hex(token);
 		input_info(true, ilits->dev, "%s rw_reg[%d] = 0x%x\n", __func__, count, rw_reg[count]);
 		count++;
@@ -779,6 +647,8 @@ static ssize_t ilitek_proc_debug_message_read(struct file *filp, char __user *bu
 		} else if (ilits->dbl[ilits->odi].data[0] == P5_X_DEBUG_AXIS_PACKET_ID) {
 			send_data_len = 0;	/* ilits->dbl[0][1] - 2; */
 			need_read_data_len = TR_BUF_SIZE - 8;
+		} else if (ilits->dbl[ilits->odi].data[0] == P5_X_DEMO_AXIS_PACKET_ID) {
+			need_read_data_len = P5_X_SEC_DEMO_MODE_PACKET_LEN;
 		}
 
 		for (i = 0; i < need_read_data_len; i++) {
@@ -827,107 +697,6 @@ out:
 	return send_data_len;
 }
 
-static ssize_t ilitek_proc_get_debug_mode_data_read(struct file *filp, char __user *buff, size_t size, loff_t *pos)
-{
-	int ret;
-	struct file_buffer csv;
-
-	if (*pos != 0)
-		return 0;
-
-	/* initialize file */
-	memset(csv.fname, 0, sizeof(csv.fname));
-	snprintf(csv.fname, sizeof(csv.fname), "%s", DEBUG_DATA_FILE_PATH);
-	csv.flen = 0;
-	csv.wlen = 0;
-	csv.max_size = DEBUG_DATA_FILE_SIZE;
-
-	csv.ptr = vmalloc(csv.max_size);
-	if (ERR_ALLOC_MEM(csv.ptr)) {
-		input_err(true, ilits->dev, "%s Failed to allocate CSV mem\n", __func__);
-		goto out;
-	}
-
-	/* save data to csv */
-	input_info(true, ilits->dev, "%s Get Raw data %d frame\n", __func__, ilits->raw_count);
-	input_info(true, ilits->dev, "%s Get Delta data %d frame\n", __func__, ilits->delta_count);
-	csv.wlen += snprintf(csv.ptr + csv.wlen, (csv.max_size - csv.wlen),
-			"Get Raw data %d frame\n", ilits->raw_count);
-	csv.wlen += snprintf(csv.ptr + csv.wlen, (csv.max_size - csv.wlen),
-			"Get Delta data %d frame\n", ilits->delta_count);
-
-	file_write(&csv, true);
-
-	/* change to debug mode */
-	if (ili_set_tp_data_len(DATA_FORMAT_DEBUG, false, NULL) < 0) {
-		input_err(true, ilits->dev, "%s Failed to set tp data length\n", __func__);
-		goto out;
-	}
-
-	/* get raw data */
-	csv.wlen = 0;
-	memset(csv.ptr, 0, csv.max_size);
-	csv.wlen += snprintf(csv.ptr + csv.wlen, (csv.max_size - csv.wlen), "\n\n=======Raw data=======");
-	file_write(&csv, false);
-
-	ret = debug_mode_get_data(&csv, P5_X_FW_RAW_DATA_MODE, ilits->raw_count);
-	if (ret < 0)
-		goto out;
-
-	/* get delta data */
-	csv.wlen = 0;
-	memset(csv.ptr, 0, csv.max_size);
-	csv.wlen += snprintf(csv.ptr + csv.wlen, (csv.max_size - csv.wlen), "\n\n=======Delta data=======");
-	file_write(&csv, false);
-
-	ret = debug_mode_get_data(&csv, P5_X_FW_DELTA_DATA_MODE, ilits->delta_count);
-	if (ret < 0)
-		goto out;
-
-	/* change to demo mode */
-	if (ili_set_tp_data_len(DATA_FORMAT_DEMO, false, NULL) < 0)
-		input_err(true, ilits->dev, "%s Failed to set tp data length\n", __func__);
-
-out:
-	ipio_vfree((void **)&csv.ptr);
-	return 0;
-}
-
-static ssize_t ilitek_proc_get_debug_mode_data_write(struct file *filp, const char *buff, size_t size, loff_t *pos)
-{
-	char *token = NULL, *cur = NULL;
-	char cmd[256] = {0};
-	u8 temp[256] = {0}, count = 0;
-
-	if ((size - 1) > sizeof(cmd)) {
-		input_err(true, ilits->dev, "%s ERROR! input length is larger than local buffer\n", __func__);
-		return -1;
-	}
-
-	if (buff != NULL) {
-		if (copy_from_user(cmd, buff, size - 1)) {
-			input_info(true, ilits->dev, "%s Failed to copy data from user space\n", __func__);
-			return -1;
-		}
-	}
-
-	input_info(true, ilits->dev, "%s size = %d, cmd = %s\n", __func__, (int)size, cmd);
-	token = cur = cmd;
-	while ((token = strsep(&cur, ",")) != NULL) {
-		temp[count] = ili_str2hex(token);
-		input_info(true, ilits->dev, "%s temp[%d] = %d\n", __func__, count, temp[count]);
-		count++;
-	}
-
-	ilits->raw_count = ((temp[0] << 8) | temp[1]);
-	ilits->delta_count = ((temp[2] << 8) | temp[3]);
-	ilits->bg_count = ((temp[4] << 8) | temp[5]);
-
-	input_info(true, ilits->dev, "%s Raw_count = %d, Delta_count = %d, BG_count = %d\n",
-			__func__, ilits->raw_count, ilits->delta_count, ilits->bg_count);
-	return size;
-}
-
 static ssize_t ilitek_node_mp_lcm_on_test_read(struct file *filp, char __user *buff, size_t size, loff_t *pos)
 {
 	int ret = 0, len = 2;
@@ -939,10 +708,6 @@ static ssize_t ilitek_node_mp_lcm_on_test_read(struct file *filp, char __user *b
 	input_info(true, ilits->dev, "%s Run MP test with LCM on\n", __func__);
 
 	mutex_lock(&ilits->touch_mutex);
-
-	/* Create the directory for mp_test result */
-	if ((dev_mkdir(CSV_LCM_ON_PATH, S_IRUGO | S_IWUSR)) != 0)
-		input_err(true, ilits->dev, "%s Failed to create directory for mp_test\n", __func__);
 
 	if (esd_en)
 		ili_wq_ctrl(WQ_ESD, DISABLE);
@@ -1003,10 +768,6 @@ static ssize_t ilitek_node_mp_lcm_off_test_read(struct file *filp, char __user *
 	input_info(true, ilits->dev, "%s Run MP test with LCM off\n", __func__);
 
 	mutex_lock(&ilits->touch_mutex);
-
-	/* Create the directory for mp_test result */
-	if ((dev_mkdir(CSV_LCM_OFF_PATH, S_IRUGO | S_IWUSR)) != 0)
-		input_err(true, ilits->dev, "%s Failed to create directory for mp_test\n", __func__);
 
 	if (esd_en)
 		ili_wq_ctrl(WQ_ESD, DISABLE);
@@ -1097,6 +858,35 @@ static ssize_t ilitek_node_ver_info_read(struct file *filp, char __user *buff, s
 	return len;
 }
 
+static int ilitek_proc_output_data_show(struct seq_file *m, void *v)
+{
+	int i;
+
+	input_info(true, ilits->dev, "%s output data node, mode = %d\n", __func__, ilits->output_data_mode);
+
+	mutex_lock(&ilits->debug_mutex);
+
+	if (ilits->output_data_mode == OUTPUT_DATA) {
+		if (ilits->output_data != NULL)
+			seq_printf(m, "%s", ilits->output_data);
+	} else if (ilits->output_data_mode == OUTPUT_CSV_NAME) {
+		if (ilits->mp_csv_name != NULL)
+			seq_printf(m, "%s", ilits->mp_csv_name);
+	} else if (ilits->output_data_mode == OUTPUT_IRAM_DUMP) {
+		if (ilits->output_data != NULL) {
+			for (i = 0; i < ilits->output_data_len; i++) {
+				seq_printf(m, "%02X", ilits->output_data[i]);
+				if ((i + 1) % 16 == 0 && i > 0)
+					seq_printf(m, "\n");
+			}
+			seq_printf(m, "\n");
+		}
+	}
+
+	mutex_unlock(&ilits->debug_mutex);
+	return 0;
+}
+
 static ssize_t ilitek_node_change_list_read(struct file *filp, char __user *buff, size_t size, loff_t *pos)
 {
 	u32 len = 0;
@@ -1161,11 +951,9 @@ static ssize_t ilitek_node_fw_upgrade_read(struct file *filp, char __user *buff,
 		ili_wq_ctrl(WQ_BAT, DISABLE);
 
 	ilits->force_fw_update = ENABLE;
-	ilits->node_update = true;
 
 	ret = ili_fw_upgrade_handler(NULL);
 
-	ilits->node_update = false;
 	ilits->force_fw_update = DISABLE;
 
 	g_user_buf[0] = 0x0;
@@ -1294,7 +1082,7 @@ static ssize_t ilitek_proc_sram_test_info(struct file *filp, char __user *buff, 
 		len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "%s\n", "TP_IC_WHOLE_RST Failed");
 	}
 
-	mdelay(30);
+	msleep(30);
 
 	ret = ili_ice_mode_ctrl(ENABLE, OFF);
 	if (ret < 0) {
@@ -1314,7 +1102,7 @@ static ssize_t ilitek_proc_sram_test_info(struct file *filp, char __user *buff, 
 		len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "%s\n", "TP_IC_WHOLE_RST Failed");
 	}
 
-	mdelay(50);
+	msleep(50);
 
 	ret = ili_fw_upgrade_handler(NULL);
 	if (ret < 0) {
@@ -1338,10 +1126,10 @@ int ili_get_tp_recore_ctrl(int data)
 	case ENABLE_RECORD:
 		input_info(true, ilits->dev, "%s recore enable", __func__);
 		ret = ili_ic_func_ctrl("tp_recore", 1);
-		mdelay(200);
+		msleep(200);
 		break;
 	case DATA_RECORD:
-		mdelay(50);
+		msleep(50);
 		input_info(true, ilits->dev, "%s Get data", __func__);
 		ret = ili_ic_func_ctrl("tp_recore", 2);
 		if (ret < 0) {
@@ -1567,7 +1355,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	u8 temp[256] = {0};
 	u32 *data = NULL;
 
-	if ((size - 1) > sizeof(cmd)) {
+	if (size == 0 || size > sizeof(cmd)) {
 		input_err(true, ilits->dev, "%s ERROR! input length is larger than local buffer\n", __func__);
 		return -1;
 	}
@@ -1650,7 +1438,6 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		ili_ic_get_tp_info();
 		ili_ic_get_panel_info();
 		input_info(true, ilits->dev, "%s Driver version = %s\n", __func__, DRIVER_VERSION);
-		input_info(true, ilits->dev, "%s TP module = %s\n", __func__, ilits->md_name);
 	} else if (strncmp(cmd, "enableicemode", strlen(cmd)) == 0) {
 		if (data[1] == ON)
 			ili_ice_mode_ctrl(ENABLE, ON);
@@ -1715,7 +1502,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "iow", strlen(cmd)) == 0) {
 		int w_len = 0;
 
-		w_len = data[1];
+		w_len = min_t(u32, data[1], sizeof(temp));
 		input_info(true, ilits->dev, "%s w_len = %d\n", __func__, w_len);
 		for (i = 0; i < w_len; i++) {
 			temp[i] = data[2 + i];
@@ -1726,7 +1513,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "ior", strlen(cmd)) == 0) {
 		int r_len = 0;
 
-		r_len = data[1];
+		r_len = min_t(u32, data[1], sizeof(temp));
 		input_info(true, ilits->dev, "%s r_len = %d\n", __func__, r_len);
 		ilits->wrapper(NULL, 0, temp, r_len, ON, OFF);
 		for (i = 0; i < r_len; i++)
@@ -1735,8 +1522,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int delay = 0;
 		int w_len = 0, r_len = 0;
 
-		w_len = data[1];
-		r_len = data[2];
+		w_len = min_t(u32, data[1], sizeof(temp));
+		r_len = min_t(u32, data[2], sizeof(temp));
 		delay = data[3];
 		input_info(true, ilits->dev, "%s w_len = %d, r_len = %d, delay = %d\n", __func__, w_len, r_len, delay);
 
@@ -1746,7 +1533,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		}
 		ret = ilits->wrapper(temp, w_len, NULL, 0, ON, OFF);
 		memset(temp, 0, sizeof(temp));
-		mdelay(delay);
+		msleep(delay);
 		ilits->wrapper(NULL, 0, temp, r_len, ON, OFF);
 		for (i = 0; i < r_len; i++)
 			input_info(true, ilits->dev, "%s read[%d] = %x\n", __func__, i, temp[i]);
@@ -1754,8 +1541,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int delay = 0;
 		int w_len = 0, r_len = 0;
 
-		w_len = data[1];
-		r_len = data[2];
+		w_len = min_t(u32, data[1], sizeof(temp));
+		r_len = min_t(u32, data[2], sizeof(temp));
 		delay = data[3];
 		input_info(true, ilits->dev, "%s w_len = %d, r_len = %d, delay = %d\n", __func__, w_len, r_len, delay);
 		for (i = 0; i < w_len; i++) {
@@ -1784,8 +1571,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		ilits->fw_update_stat = (ret < 0) ? FW_UPDATE_FAIL : FW_UPDATE_PASS;
 		input_info(true, ilits->dev, "%s ilits->fw_update_stat = %d\n", __func__, ilits->fw_update_stat);
 	} else if (strncmp(cmd, "dumpiramdata", strlen(cmd)) == 0) {
-		input_info(true, ilits->dev, "%s Start = 0x%x, End = 0x%x, Dump IRAM path = %s\n",
-			__func__, data[1], data[2], DUMP_IRAM_PATH);
+		input_info(true, ilits->dev, "%s Start = 0x%x, End = 0x%x\n",
+			__func__, data[1], data[2]);
 		ilits->fw_update_stat = FW_STAT_INIT;
 		ret = ili_fw_dump_iram_data(data[1], data[2], true);
 		ilits->fw_update_stat = (ret < 0) ? FW_UPDATE_FAIL : FW_UPDATE_PASS;
@@ -1802,7 +1589,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "spiw", strlen(cmd)) == 0) {
 		int wlen;
 
-		wlen = data[1];
+		wlen = min_t(u32, data[1], sizeof(temp));
 		temp[0] = 0x82;
 		for (i = 0; i < wlen; i++) {
 			temp[i] = data[2 + i];
@@ -1813,7 +1600,7 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int rlen;
 		u8 *rbuf = NULL;
 
-		rlen = data[1];
+		rlen = min_t(u32, data[1], PAGE_SIZE);
 		rbuf = kzalloc(rlen, GFP_KERNEL | GFP_DMA);
 		if (ERR_ALLOC_MEM(rbuf)) {
 			input_err(true, ilits->dev, "%s Failed to allocate dma_rxbuf, %ld\n", __func__, PTR_ERR(rbuf));
@@ -1829,8 +1616,8 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 		int wlen, rlen;
 		u8 *rbuf = NULL;
 
-		wlen = data[1];
-		rlen = data[2];
+		wlen = min_t(u32, data[1], sizeof(temp));
+		rlen = min_t(u32, data[2], PAGE_SIZE);
 		for (i = 0; i < wlen; i++) {
 			temp[i] = data[3 + i];
 			input_info(true, ilits->dev, "%s write[%d] = %x\n", __func__, i, temp[i]);
@@ -1898,6 +1685,15 @@ static ssize_t ilitek_node_ioctl_write(struct file *filp, const char *buff, size
 	} else if (strncmp(cmd, "swipe", strlen(cmd)) == 0) {
 		ilits->ges_sym.alphabet_line_2_top = !ilits->ges_sym.alphabet_line_2_top;
 		input_info(true, ilits->dev, "alphabet_line_2_top = %d\n", ilits->ges_sym.alphabet_line_2_top);
+	} else if (strncmp(cmd, "covermode", strlen(cmd)) == 0) {
+		if (ili_ic_func_ctrl("cover_mode", data[1]) < 0)
+			input_info(true, ilits->dev, "%s Write cover_mode cmd failed\n", __func__);
+	} else if (strncmp(cmd, "outputdatamode", strlen(cmd)) == 0) {
+		ilits->output_data_mode = data[1];
+		input_info(true, ilits->dev, "%s set output data mode = %d\n", __func__, ilits->output_data_mode);
+	} else if (strncmp(cmd, "mptestitem", strlen(cmd)) == 0) {
+		ilits->mp_test_item = data[1];
+		input_info(true, ilits->dev, "%s set mp test item = %d\n", __func__, ilits->mp_test_item);
 	} else {
 		input_err(true, ilits->dev, "%s Unknown command\n", __func__);
 		size = -1;
@@ -2009,24 +1805,32 @@ static long ilitek_node_compat_ioctl(struct file *filp, unsigned int cmd, unsign
 		return ret;
 	case ILITEK_COMPAT_IOCTL_TP_PANEL_INFO:
 		ILI_DBG("%s compat_ioctl: convert resolution\n", __func__);
-		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_COMPAT_IOCTL_TP_PANEL_INFO,
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_TP_PANEL_INFO,
 			(unsigned long)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_TP_INFO:
 		ILI_DBG("%s compat_ioctl: convert tp info\n", __func__);
-		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_COMPAT_IOCTL_TP_INFO, (unsigned long)compat_ptr(arg));
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_TP_INFO, (unsigned long)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_WRAPPER_RW:
 		ILI_DBG("%s compat_ioctl: convert wrapper\n", __func__);
-		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_COMPAT_IOCTL_WRAPPER_RW, (unsigned long)compat_ptr(arg));
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_WRAPPER_RW, (unsigned long)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_DDI_WRITE:
 		ILI_DBG("%s compat_ioctl: convert ddi write\n", __func__);
-		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_COMPAT_IOCTL_DDI_WRITE, (unsigned long)compat_ptr(arg));
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_DDI_WRITE, (unsigned long)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_DDI_READ:
 		ILI_DBG("%s compat_ioctl: convert ddi read\n", __func__);
-		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_COMPAT_IOCTL_DDI_READ, (unsigned long)compat_ptr(arg));
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_DDI_READ, (unsigned long)compat_ptr(arg));
+		return ret;
+	case ILITEK_COMPAT_IOCTL_OUTPUT_MODE_SET:
+		ILI_DBG("compat_ioctl: output data mode\n");
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_OUTPUT_MODE_SET, (unsigned long)compat_ptr(arg));
+		return ret;
+	case ILITEK_COMPAT_IOCTL_MP_TEST_ITEM_SET:
+		ILI_DBG("compat_ioctl: set mp test item\n");
+		ret = filp->f_op->unlocked_ioctl(filp, ILITEK_IOCTL_MP_TEST_ITEM_SET, (unsigned long)compat_ptr(arg));
 		return ret;
 	default:
 		input_err(true, ilits->dev, "%s no ioctl cmd, return ilitek_node_ioctl\n", __func__);
@@ -2417,6 +2221,24 @@ static long ilitek_node_ioctl(struct file *filp, unsigned int cmd, unsigned long
 			ret = -ENOTTY;
 		}
 		break;
+	case ILITEK_IOCTL_OUTPUT_MODE_SET:
+		if (copy_from_user(szBuf, (u8 *) arg, 1)) {
+			input_err(true, ilits->dev, "%s Failed to copy data from user space\n", __func__);
+			ret = -ENOTTY;
+			break;
+		}
+		ilits->output_data_mode = szBuf[0];
+		input_info(true, ilits->dev, "%s ioctl: set outout mode = %d\n", __func__, ilits->output_data_mode);
+		break;
+	case ILITEK_IOCTL_MP_TEST_ITEM_SET:
+		if (copy_from_user(szBuf, (u8 *) arg, 1)) {
+			input_err(true, ilits->dev, "%s Failed to copy data from user space\n", __func__);
+			ret = -ENOTTY;
+			break;
+		}
+		ilits->mp_test_item = szBuf[0];
+		input_info(true, ilits->dev, "%s ioctl: set mp test item = %d\n", __func__, ilits->mp_test_item);
+		break;
 	default:
 		ret = -ENOTTY;
 		break;
@@ -2437,35 +2259,57 @@ out:
 
 static struct proc_dir_entry *proc_dir_ilitek;
 
+static int ilitek_proc_seq_output_data_read(struct inode *inode, struct file *file)
+{
+	return single_open_size(file, ilitek_proc_output_data_show, NULL, 16 * K);
+}
+
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+
 typedef struct {
 	char *name;
 	struct proc_dir_entry *node;
-	struct proc_ops *fops;
+	const struct proc_ops *fops;
 	bool isCreated;
 } proc_node;
 
+
+static struct proc_ops proc_output_data_fops = {
+	.proc_open = ilitek_proc_seq_output_data_read,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
+
 static struct proc_ops proc_mp_lcm_on_test_fops = {
 	.proc_read = ilitek_node_mp_lcm_on_test_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_mp_lcm_off_test_fops = {
 	.proc_read = ilitek_node_mp_lcm_off_test_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_ver_info_fops = {
 	.proc_read = ilitek_node_ver_info_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_change_list_fops = {
 	.proc_read = ilitek_node_change_list_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_debug_message_fops = {
 	.proc_read = ilitek_proc_debug_message_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_debug_message_switch_fops = {
 	.proc_read = ilitek_proc_debug_switch_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_ioctl_fops = {
@@ -2474,49 +2318,158 @@ static struct proc_ops proc_ioctl_fops = {
 	.proc_compat_ioctl = ilitek_node_compat_ioctl,
 #endif
 	.proc_write = ilitek_node_ioctl_write,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_fw_upgrade_fops = {
 	.proc_read = ilitek_node_fw_upgrade_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_fw_process_fops = {
 	.proc_read = ilitek_proc_fw_process_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_get_delta_data_fops = {
 	.proc_read = ilitek_proc_get_delta_data_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_get_raw_data_fops = {
 	.proc_read = ilitek_proc_fw_get_raw_data_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_rw_tp_reg_fops = {
 	.proc_read = ilitek_proc_rw_tp_reg_read,
 	.proc_write = ilitek_proc_rw_tp_reg_write,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_fw_pc_counter_fops = {
 	.proc_read = ilitek_proc_fw_pc_counter_read,
-};
-
-static struct proc_ops proc_get_debug_mode_data_fops = {
-	.proc_read = ilitek_proc_get_debug_mode_data_read,
-	.proc_write = ilitek_proc_get_debug_mode_data_write,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_debug_level_fops = {
 	.proc_read = ilitek_proc_debug_level_read,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_get_customer_info_fops = {
 	.proc_read = ilitek_proc_get_customer_info,
+	.proc_lseek = default_llseek,
 };
 
 static struct proc_ops proc_sram_test_fops = {
 	.proc_read = ilitek_proc_sram_test_info,
+	.proc_lseek = default_llseek,
 };
+
+
+#else
+
+typedef struct {
+	char *name;
+	struct proc_dir_entry *node;
+	const struct file_operations *fops;
+	bool isCreated;
+} proc_node;
+
+
+static struct file_operations proc_output_data_fops = {
+	.open = ilitek_proc_seq_output_data_read,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static struct file_operations proc_mp_lcm_on_test_fops = {
+	.read = ilitek_node_mp_lcm_on_test_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_mp_lcm_off_test_fops = {
+	.read = ilitek_node_mp_lcm_off_test_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_ver_info_fops = {
+	.read = ilitek_node_ver_info_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_change_list_fops = {
+	.read = ilitek_node_change_list_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_debug_message_fops = {
+	.read = ilitek_proc_debug_message_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_debug_message_switch_fops = {
+	.read = ilitek_proc_debug_switch_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_ioctl_fops = {
+	.unlocked_ioctl = ilitek_node_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = ilitek_node_compat_ioctl,
+#endif
+	.write = ilitek_node_ioctl_write,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_fw_upgrade_fops = {
+	.read = ilitek_node_fw_upgrade_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_fw_process_fops = {
+	.read = ilitek_proc_fw_process_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_get_delta_data_fops = {
+	.read = ilitek_proc_get_delta_data_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_get_raw_data_fops = {
+	.read = ilitek_proc_fw_get_raw_data_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_rw_tp_reg_fops = {
+	.read = ilitek_proc_rw_tp_reg_read,
+	.write = ilitek_proc_rw_tp_reg_write,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_fw_pc_counter_fops = {
+	.read = ilitek_proc_fw_pc_counter_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_debug_level_fops = {
+	.read = ilitek_proc_debug_level_read,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_get_customer_info_fops = {
+	.read = ilitek_proc_get_customer_info,
+	.llseek = default_llseek,
+};
+
+static struct file_operations proc_sram_test_fops = {
+	.read = ilitek_proc_sram_test_info,
+	.llseek = default_llseek,
+};
+#endif
 
 proc_node iliproc[] = {
 	{"ioctl", NULL, &proc_ioctl_fops, false},
@@ -2531,11 +2484,11 @@ proc_node iliproc[] = {
 	{"fw_pc_counter", NULL, &proc_fw_pc_counter_fops, false},
 	{"show_delta_data", NULL, &proc_get_delta_data_fops, false},
 	{"show_raw_data", NULL, &proc_get_raw_data_fops, false},
-	{"get_debug_mode_data", NULL, &proc_get_debug_mode_data_fops, false},
 	{"rw_tp_reg", NULL, &proc_rw_tp_reg_fops, false},
 	{"ver_info", NULL, &proc_ver_info_fops, false},
 	{"change_list", NULL, &proc_change_list_fops, false},
 	{"sram_test", NULL, &proc_sram_test_fops, false},
+	{"output_data", NULL, &proc_output_data_fops, false},
 };
 
 void ili_node_init(void)
