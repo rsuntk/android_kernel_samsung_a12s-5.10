@@ -3009,6 +3009,18 @@ int is_sensor_peri_actuator_softlanding(struct is_device_sensor_peri *device)
 		soft_landing_table->step_delay = 200;
 		soft_landing_table->hw_table[0] = 0;
 	}
+#ifdef USE_CAMERA_ACT_DRIVER_SOFT_LANDING
+	v4l2_ctrl.id = V4L2_CID_ACTUATOR_SOFT_LANDING;
+	ret = v4l2_subdev_call(device->subdev_actuator, core, ioctl,
+			SENSOR_IOCTL_ACT_S_CTRL, &v4l2_ctrl);
+
+	if (ret != HW_SOFTLANDING_FAIL) {
+		if (ret)
+			err("[SEN:%d] v4l2_subdev_call(s_ctrl, id:%d) is fail(%d)",
+					actuator->id, v4l2_ctrl.id, ret);
+		return ret;
+	}
+#endif
 
 	ret = is_sensor_peri_actuator_check_move_done(device);
 	if (ret) {

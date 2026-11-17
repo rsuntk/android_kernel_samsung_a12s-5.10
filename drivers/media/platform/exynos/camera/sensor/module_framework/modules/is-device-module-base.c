@@ -362,13 +362,11 @@ int sensor_module_deinit(struct v4l2_subdev *subdev)
 		}
 	}
 
-#if 0 // No need to vendor code for specific actuator_softlanding
 	if (sensor_peri->actuator) {
 		ret = is_sensor_peri_actuator_softlanding(sensor_peri);
 		if (ret)
 			err("failed to soft landing control of actuator driver\n");
 	}
-#endif
 
 	if (sensor_peri->flash != NULL) {
 		cancel_work_sync(&sensor_peri->flash->flash_data.flash_fire_work);
