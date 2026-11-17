@@ -872,30 +872,6 @@ static int parse_dt(void)
 		}
 	}
 
-	retval = of_property_read_string(np, ili_dt_prop(np, "lcd_vsp", prop_name, sizeof(prop_name)), &ilits->regulator_lcd_vsp);
-	if (retval < 0) {
-		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_vsp name property\n", __func__);
-	} else {
-		if (!ilits->lcd_vsp)
-			ilits->lcd_vsp = devm_regulator_get(ilits->dev, ilits->regulator_lcd_vsp);
-		if (IS_ERR_OR_NULL(ilits->lcd_vsp)) {
-			input_err(true, ilits->dev, "%s: Failed to get %s regulator.\n",
-					__func__, ilits->regulator_lcd_vsp);
-//			return -ENODEV;
-		}
-	}
-	retval = of_property_read_string(np, ili_dt_prop(np, "lcd_vsn", prop_name, sizeof(prop_name)), &ilits->regulator_lcd_vsn);
-	if (retval < 0) {
-		input_err(true, ilits->dev, "%s: Failed to get regulator_lcd_vsn name property\n", __func__);
-	} else {
-		if (!ilits->lcd_vsn)
-			ilits->lcd_vsn = devm_regulator_get(ilits->dev, ilits->regulator_lcd_vsn);
-		if (IS_ERR_OR_NULL(ilits->lcd_vsn)) {
-			input_err(true, ilits->dev, "%s: Failed to get %s regulator.\n",
-					__func__, ilits->regulator_lcd_vsn);
-//			return -ENODEV;
-		}
-	}
 	ili_dt_prop(np, "irq-gpio", prop_name, sizeof(prop_name));
 	prop = of_find_property(np, prop_name, NULL);
 	if (prop && prop->length) {

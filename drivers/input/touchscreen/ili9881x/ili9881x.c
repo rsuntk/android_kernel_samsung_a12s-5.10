@@ -1305,10 +1305,6 @@ void ili_dev_remove(void)
 		regulator_put(ilits->lcd_vddi);
 	if (ilits->lcd_rst)
 		regulator_put(ilits->lcd_rst);
-	if (ilits->lcd_vsp)
-		regulator_put(ilits->lcd_vsp);
-	if (ilits->lcd_vsn)
-		regulator_put(ilits->lcd_vsn);
 
 	kfree(ilits->tr_buf);
 	kfree(ilits->gcoord);

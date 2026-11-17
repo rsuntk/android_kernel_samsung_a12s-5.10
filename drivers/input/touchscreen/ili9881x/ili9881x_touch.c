@@ -1425,20 +1425,6 @@ int ili_incell_power_control(int onoff)
 				regulator_disable(ilits->lcd_rst);
 			}
 		}
-		if (ilits->lcd_vsp) {
-			ret = regulator_enable(ilits->lcd_vsp);
-			if (ret) {
-				input_err(true, ilits->dev, "%s: Failed to lcd_vsp %d\n", __func__, ret);
-				regulator_disable(ilits->lcd_vsp);
-			}
-		}
-		if (ilits->lcd_vsn) {
-			ret = regulator_enable(ilits->lcd_vsn);
-			if (ret) {
-				input_err(true, ilits->dev, "%s: Failed to lcd_vsn %d\n", __func__, ret);
-				regulator_disable(ilits->lcd_vsn);
-			}
-		}
 	} else {
 		if (ilits->lcd_rst) {
 			if (regulator_is_enabled(ilits->lcd_rst)) {
@@ -1469,28 +1455,8 @@ int ili_incell_power_control(int onoff)
 		if (ilits->chip->id == ILI9882_CHIP)
 			usleep_range(1500, 2000);
 
-		if (ilits->lcd_vsn) {
-			if (regulator_is_enabled(ilits->lcd_vsn)) {
-				ret = regulator_disable(ilits->lcd_vsn);
-				if (ret)
-					input_err(true, ilits->dev, "%s: failed to disable lcd_vsn: %d\n", __func__, ret);
-			} else {
-				input_err(true, ilits->dev, "%s: lcd_vsn is already disabled\n", __func__);
-			}
-		}
-
 		if (ilits->poweroff_discharging_us > 0)
 			usleep_range(ilits->poweroff_discharging_us, ilits->poweroff_discharging_us);
-
-		if (ilits->lcd_vsp) {
-			if (regulator_is_enabled(ilits->lcd_vsp)) {
-				ret = regulator_disable(ilits->lcd_vsp);
-				if (ret)
-					input_err(true, ilits->dev, "%s: failed to disable lcd_vsp: %d\n", __func__, ret);
-			} else {
-				input_err(true, ilits->dev, "%s: lcd_vsp is already disabled\n", __func__);
-			}
-		}
 
 		if (ilits->poweroff_discharging_us > 0)
 			usleep_range(ilits->poweroff_discharging_us, ilits->poweroff_discharging_us);

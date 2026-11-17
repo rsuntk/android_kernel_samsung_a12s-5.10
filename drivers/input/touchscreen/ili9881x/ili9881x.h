@@ -934,10 +934,6 @@ struct ilitek_ts_data {
 	struct regulator *lcd_bl_en;
 	const char *regulator_lcd_vddi;
 	struct regulator *lcd_vddi;
-	const char *regulator_lcd_vsp;
-	struct regulator *lcd_vsp;
-	const char *regulator_lcd_vsn;
-	struct regulator *lcd_vsn;
 
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_on_state;
