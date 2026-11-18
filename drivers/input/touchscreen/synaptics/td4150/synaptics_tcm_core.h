@@ -55,6 +55,12 @@
 
 #define TOUCH_PRINT_INFO_DWORK_TIME	30000	/* 30s */
 
+#ifdef CONFIG_SEC_FACTORY
+#define RESPONSE_TIMEOUT_MS 3000
+#else
+#define RESPONSE_TIMEOUT_MS 1000
+#endif
+
 /* #define USE_FLASH */
 
 #define SYNAPTICS_TCM_ID_PRODUCT (1 << 0)
@@ -476,6 +482,7 @@ struct syna_tcm_hcd {
 	unsigned int lp_state;
 	unsigned int early_resume_cnt;
 	unsigned int prox_lp_scan_cnt;
+	bool sysinput_seen;
 	unsigned char finger_state[MAX_FINGER_NUM];
 	unsigned int finger_x[MAX_FINGER_NUM];
 	unsigned int finger_y[MAX_FINGER_NUM];
@@ -654,6 +661,13 @@ int syna_tcm_power_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 int syna_tcm_reset_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 void touch_free_objects(void);
 void touch_reset_proximity(void);
+int pinctrl_configure(struct syna_tcm_hcd *tcm_hcd, bool enable);
+#if defined(CONFIG_PM) || defined(CONFIG_FB)
+int syna_tcm_early_resume(struct device *dev);
+int syna_tcm_resume(struct device *dev);
+int syna_tcm_early_suspend(struct device *dev);
+int syna_tcm_suspend(struct device *dev);
+#endif
 
 static inline int syna_tcm_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)

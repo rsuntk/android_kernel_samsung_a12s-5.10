@@ -3621,6 +3621,7 @@
 				synaptics,enable_settings_aot;
 				synaptics,support_ear_detect_mode;
 				synaptics,prox_lp_scan_enabled;
+				synaptics,enable_sysinput_enabled;
 				synaptics,lcdid = <0x00 0x04 0x05>;
 				synaptics,lcdtype = <0x7a6220 0x00 0x00 0x00 0x3a6220 0xba6220>;
 				synaptics,fw_name = "tsp_synaptics/td4375_a12s_boe.bin", "", "", "", "tsp_synaptics/td4150_a12s_boe.bin", "tsp_synaptics/td4160_a12s_boe.bin";

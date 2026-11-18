@@ -36,9 +36,26 @@
 
 #include "synaptics_tcm_sec_fn.h"
 
+#include <linux/wait.h>
+
 #define TSP_PATH_EXTERNAL_FW		"/sdcard/Firmware/TSP/tsp.bin"
 #define TSP_PATH_EXTERNAL_FW_SIGNED	"/sdcard/Firmware/TSP/tsp_signed.bin"
 #define TSP_PATH_SPU_FW_SIGNED		"/spu/TSP/ffu_tsp.bin"
+
+enum display_state {
+	DISPLAY_STATE_SERVICE_SHUTDOWN = -1,
+	DISPLAY_STATE_NONE = 0,
+	DISPLAY_STATE_OFF,
+	DISPLAY_STATE_ON,
+	DISPLAY_STATE_DOZE,
+	DISPLAY_STATE_DOZE_SUSPEND,
+	DISPLAY_STATE_LPM_OFF = 20,
+};
+
+enum display_event {
+	DISPLAY_EVENT_EARLY = 0,
+	DISPLAY_EVENT_LATE,
+};
 
 enum {
 	BUILT_IN = 0,
@@ -1031,11 +1048,14 @@ static ssize_t read_support_feature(struct device *dev,
 		feature |= INPUT_FEATURE_ENABLE_SETTINGS_AOT;
 	if (tcm_hcd->hw_if->bdata->prox_lp_scan_enabled)
 		feature |= INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED;
+	if (tcm_hcd->hw_if->bdata->enable_sysinput_enabled)
+		feature |= INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED;
 
-	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d%s%s\n",
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d%s%s%s\n",
 			__func__, feature,
 			feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "",
-				feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "");
+			feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "",
+			feature & INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED ? " SE" : "");
 
 	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", feature);
 }
@@ -1116,16 +1136,93 @@ static ssize_t protos_event_store(struct device *dev,
 	return count;
 }
 
+static ssize_t enabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: lp_state %d\n", __func__, tcm_hcd->lp_state);
+
+	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", tcm_hcd->lp_state);
+}
+
+static ssize_t enabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+	int buff[2];
+	int ret;
+	int retval = 0;
+
+	ret = sscanf(buf, "%d,%d", &buff[0], &buff[1]);
+	if (ret != 2) {
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"%s: failed read params [%d]\n", __func__, ret);
+		return -EINVAL;
+	}
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d %d\n", __func__, buff[0], buff[1]);
+
+	tcm_hcd->sysinput_seen = true;
+
+	/* handle same sequence : buff[0] = DISPLAY_STATE_ON, DISPLAY_STATE_DOZE, DISPLAY_STATE_DOZE_SUSPEND */
+	if (buff[0] == DISPLAY_STATE_DOZE || buff[0] == DISPLAY_STATE_DOZE_SUSPEND)
+		buff[0] = DISPLAY_STATE_ON;
+
+	if (buff[0] == DISPLAY_STATE_ON) {
+		if (buff[1] == DISPLAY_EVENT_EARLY)
+			syna_tcm_early_resume(&tcm_hcd->pdev->dev);
+		else if (buff[1] == DISPLAY_EVENT_LATE)
+			syna_tcm_resume(&tcm_hcd->pdev->dev);
+	} else if (buff[0] == DISPLAY_STATE_OFF) {
+		if (atomic_read(&tcm_hcd->firmware_flashing)) {
+			retval = wait_event_interruptible_timeout(tcm_hcd->reflash_wq,
+						!atomic_read(&tcm_hcd->firmware_flashing),
+						msecs_to_jiffies(RESPONSE_TIMEOUT_MS));
+			if (retval == 0) {
+				input_err(true, tcm_hcd->pdev->dev.parent,
+					"Timed out waiting for completion of flashing firmware\n");
+				atomic_set(&tcm_hcd->firmware_flashing, 0);
+				return -EIO;
+			}
+		}
+
+		if (buff[1] == DISPLAY_EVENT_EARLY)
+			syna_tcm_early_suspend(&tcm_hcd->pdev->dev);
+		else if (buff[1] == DISPLAY_EVENT_LATE)
+			syna_tcm_suspend(&tcm_hcd->pdev->dev);
+	} else if (buff[0] == DISPLAY_STATE_LPM_OFF || buff[0] == DISPLAY_STATE_SERVICE_SHUTDOWN) {
+		if (buff[0] == DISPLAY_STATE_LPM_OFF)
+			input_info(true, tcm_hcd->pdev->dev.parent, "%s: DISPLAY_STATE_LPM_OFF\n", __func__);
+		else
+			input_info(true, tcm_hcd->pdev->dev.parent, "%s: DISPLAY_STATE_SERVICE_SHUTDOWN\n", __func__);
+
+		tcm_hcd->lp_state = PWR_OFF;
+		retval = tcm_hcd->enable_irq(tcm_hcd, false, false);
+		if (retval < 0)
+			input_err(true, tcm_hcd->pdev->dev.parent, "Failed to disable interrupt before\n");
+
+		pinctrl_configure(tcm_hcd, false);
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s: lpm, disable interrupt and work--\n", __func__);
+	}
+
+	return count;
+}
+
 static DEVICE_ATTR(sensitivity_mode, 0664, sensitivity_mode_show, sensitivity_mode_store);
 static DEVICE_ATTR(support_feature, 0444, read_support_feature, NULL);
 static DEVICE_ATTR(prox_power_off, 0664, prox_power_off_show, prox_power_off_store);
 static DEVICE_ATTR(virtual_prox, 0664, protos_event_show, protos_event_store);
+static DEVICE_ATTR(enabled, 0664, enabled_show, enabled_store);
 
 static struct attribute *cmd_attributes[] = {
 	&dev_attr_sensitivity_mode.attr,
 	&dev_attr_support_feature.attr,
 	&dev_attr_prox_power_off.attr,
 	&dev_attr_virtual_prox.attr,
+	&dev_attr_enabled.attr,
 	NULL,
 };
 

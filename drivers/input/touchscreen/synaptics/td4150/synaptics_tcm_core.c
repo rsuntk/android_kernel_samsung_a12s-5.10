@@ -54,12 +54,6 @@
 
 #define NOTIFIER_PRIORITY 2
 
-#ifdef CONFIG_SEC_FACTORY
-#define RESPONSE_TIMEOUT_MS 3000
-#else
-#define RESPONSE_TIMEOUT_MS 1000
-#endif
-
 #define APP_STATUS_POLL_TIMEOUT_MS 1000
 
 #define APP_STATUS_POLL_MS 100
@@ -2610,7 +2604,7 @@ int syna_tcm_lcd_reset_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on)
 	return 0;
 }
 
-static int pinctrl_configure(struct syna_tcm_hcd *tcm_hcd, bool enable)
+int pinctrl_configure(struct syna_tcm_hcd *tcm_hcd, bool enable)
 {
 	struct pinctrl_state *state;
 
@@ -2636,7 +2630,7 @@ static int pinctrl_configure(struct syna_tcm_hcd *tcm_hcd, bool enable)
 }
 
 #if defined(CONFIG_PM) || defined(CONFIG_FB)
-static int syna_tcm_early_resume(struct device *dev)
+int syna_tcm_early_resume(struct device *dev)
 {
 	int retval = 0;
 	struct syna_tcm_hcd *tcm_hcd = dev_get_drvdata(dev);
@@ -2671,7 +2665,7 @@ static int syna_tcm_early_resume(struct device *dev)
 
 	return retval;
 }
-static int syna_tcm_resume(struct device *dev)
+int syna_tcm_resume(struct device *dev)
 {
 	int retval;
 	struct syna_tcm_hcd *tcm_hcd = dev_get_drvdata(dev);
@@ -2803,7 +2797,7 @@ exit:
 }
 
 
-static int syna_tcm_early_suspend(struct device *dev)
+int syna_tcm_early_suspend(struct device *dev)
 {
 	int retval;
 	struct syna_tcm_hcd *tcm_hcd = dev_get_drvdata(dev);
@@ -2870,7 +2864,7 @@ static int syna_tcm_early_suspend(struct device *dev)
 	return 0;
 }
 
-static int syna_tcm_suspend(struct device *dev)
+int syna_tcm_suspend(struct device *dev)
 {
 	struct syna_tcm_hcd *tcm_hcd = dev_get_drvdata(dev);
 	int retval;
@@ -2980,6 +2974,9 @@ static int syna_tcm_fb_notifier_cb(struct notifier_block *nb,
 	retval = 0;
 	if (evdata && evdata->data && tcm_hcd) {
 		transition = evdata->data;
+
+		if (tcm_hcd->sysinput_seen)
+			return 0;
 
 		if (atomic_read(&tcm_hcd->firmware_flashing) && *transition == FB_BLANK_POWERDOWN) {
 

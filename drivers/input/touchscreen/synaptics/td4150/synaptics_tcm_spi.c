@@ -407,7 +407,10 @@ static int parse_dt(struct device *dev, struct syna_tcm_board_data *bdata)
 
 	bdata->support_ear_detect = of_property_read_bool(np, "synaptics,support_ear_detect_mode");
 	bdata->prox_lp_scan_enabled = of_property_read_bool(np, "synaptics,prox_lp_scan_enabled");
-	input_info(true, dev, "%s: ED:%d, lp scan:%d\n", __func__, bdata->support_ear_detect, bdata->prox_lp_scan_enabled);
+	bdata->enable_sysinput_enabled = of_property_read_bool(np, "synaptics,enable_sysinput_enabled");
+	input_info(true, dev, "%s: ED:%d, lp scan:%d, sysinput:%d\n", __func__,
+			bdata->support_ear_detect, bdata->prox_lp_scan_enabled,
+			bdata->enable_sysinput_enabled);
 
 	return 0;
 }

@@ -75,6 +75,7 @@ struct syna_tcm_board_data {
 	bool enable_settings_aot;
 	bool support_ear_detect;
 	bool prox_lp_scan_enabled;
+	bool enable_sysinput_enabled;
 };
 
 #endif
