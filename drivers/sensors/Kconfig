@@ -53,23 +53,6 @@ config SENSORS_A96T3X6_CRC_CHECK
 	help
 	  To use crc check by fw not checking checksum, active this feature
 
-
-config SENSORS_ISG5320A
-	depends on I2C
-	tristate "ISG5320A grip"
-	default n
-	help
-	  If you say yes here if you use ISG5320A for grip.
-	  This option enables grip sensors using
-	  IMAGIS ISG5320A device driver for grip.
-
-config SENSORS_ISG5320A_XCOVER5_KOR
-	depends on I2C
-	tristate "ISG5320A grip for xcover5 KOR"
-	default n
-	help
-	  If you say yes here if you use ISG5320A for XCOVER5 KOR.
-
 #
 # grip sensors configuration
 #
