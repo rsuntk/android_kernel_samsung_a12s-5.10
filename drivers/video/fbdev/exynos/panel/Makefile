@@ -20,7 +20,6 @@ obj-$(CONFIG_SUPPORT_I2C) += panel_i2c.o
 obj-$(CONFIG_DYNAMIC_FREQ) += df/dynamic_freq.o
 
 obj-$(CONFIG_EXYNOS_DECON_LCD_DUMMY_LCD_V320) += dummy_lcd/dummy_lcd.o
-obj-$(CONFIG_EXYNOS_DECON_LCD_EA8076_A21S) += ea8076/ea8076.o ea8076/ea8076_aod.o
 obj-$(CONFIG_EXYNOS_DECON_LCD_NT36525B_CTC_A12S) += nt36525b_ctc/nt36525b_ctc.o
 obj-$(CONFIG_EXYNOS_DECON_LCD_ILI9882Q_BOE_A12S) += ili9882q_boe/ili9882q_boe.o
 obj-$(CONFIG_EXYNOS_DECON_LCD_NT36525B_SHARP_A12S) += nt36525b_sharp/nt36525b_sharp.o
