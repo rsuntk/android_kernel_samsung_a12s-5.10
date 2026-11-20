@@ -50,6 +50,20 @@ static struct syna_tcm_hw_interface hw_if;
 
 static struct platform_device *syna_tcm_spi_device;
 
+#if IS_ENABLED(CONFIG_SPI_MT65XX)
+const struct mtk_chip_config synap_spi_ctrdata = {
+	.rx_mlsb = 1,
+	.tx_mlsb = 1,
+	.sample_sel = 0,
+
+	.cs_setuptime = 518,
+	.cs_holdtime = 0,
+	.cs_idletime = 0,
+	.deassert_mode = false,
+	.tick_delay = 0,
+};
+#endif
+
 #ifdef CONFIG_OF
 static int parse_dt(struct device *dev, struct syna_tcm_board_data *bdata)
 {
@@ -371,22 +385,23 @@ static int parse_dt(struct device *dev, struct syna_tcm_board_data *bdata)
 		bdata->ubl_byte_delay_us = 0;
 	}
 
-	if (of_property_read_string(np, "synaptics,regulator_lcd_vdd", &bdata->regulator_lcd_vdd)) {
-		input_err(true, dev, "%s: Failed to get regulator_dvdd name property\n", __func__);
-		return -EINVAL;
-	}
+	if (of_property_read_string(np, "synaptics,regulator_lcd_vdd", &bdata->regulator_lcd_vdd))
+		input_err(true, dev, "%s: Failed to get regulator_lcd_vdd name property\n", __func__);
 
-	if (of_property_read_string(np, "synaptics,regulator_lcd_reset", &bdata->regulator_lcd_reset)) {
-		input_err(true, dev, "%s: Failed to get regulator_dvdd name property\n", __func__);
-		return -EINVAL;
-	}
+	if (of_property_read_string(np, "synaptics,regulator_lcd_reset", &bdata->regulator_lcd_reset))
+		input_err(true, dev, "%s: Failed to get regulator_lcd_reset name property\n", __func__);
 
-	if (of_property_read_string(np, "synaptics,regulator_lcd_bl", &bdata->regulator_lcd_bl)) {
-		input_err(true, dev, "%s: Failed to get regulator_dvdd name property\n", __func__);
-		return -EINVAL;
-	}
+	if (of_property_read_string(np, "synaptics,regulator_lcd_bl", &bdata->regulator_lcd_bl))
+		input_err(true, dev, "%s: Failed to get regulator_lcd_bl name property\n", __func__);
 
-	bdata->enable_settings_aot = of_property_read_bool(np, "synaptics,enable_settings_aot");
+	if (!of_property_read_string(np, "synaptics,regulator_lcd_vsp", &bdata->regulator_lcd_vsp))
+		input_info(true, dev, "%s: regulator_lcd_vsp name property\n", __func__);
+
+	if (!of_property_read_string(np, "synaptics,regulator_lcd_vsn", &bdata->regulator_lcd_vsn))
+		input_info(true, dev, "%s: regulator_lcd_vsn name property\n", __func__);
+
+	if (!of_property_read_string(np, "synaptics,regulator_tsp_reset", &bdata->regulator_tsp_reset))
+		input_info(true, dev, "%s: regulator_tsp_reset name property\n", __func__);
 
 	bdata->pinctrl = devm_pinctrl_get(dev);
 	if (IS_ERR(bdata->pinctrl))
@@ -405,9 +420,14 @@ static int parse_dt(struct device *dev, struct syna_tcm_board_data *bdata)
 	input_info(true, dev, "%s : zone's size - indicator:%d, navigation:%d, edge:%d\n",
 		__func__, bdata->area_indicator, bdata->area_navigation ,bdata->area_edge);
 
+	bdata->enable_settings_aot = of_property_read_bool(np, "synaptics,enable_settings_aot");
+	bdata->support_cs_gpio_control = of_property_read_bool(np, "synaptics,support_cs_gpio_control");
 	bdata->support_ear_detect = of_property_read_bool(np, "synaptics,support_ear_detect_mode");
 	bdata->prox_lp_scan_enabled = of_property_read_bool(np, "synaptics,prox_lp_scan_enabled");
-	input_info(true, dev, "%s: ED:%d, lp scan:%d\n", __func__, bdata->support_ear_detect, bdata->prox_lp_scan_enabled);
+	bdata->enable_sysinput_enabled = of_property_read_bool(np, "synaptics,enable_sysinput_enabled");
+	bdata->support_spay_gesture = of_property_read_bool(np, "synaptics,support_spay_gesture_mode");
+	input_info(true, dev, "%s: AOT:%d, ED:%d, LPSCAN:%d, SE:%d, SPAY:%d\n",
+		__func__, bdata->enable_settings_aot, bdata->support_ear_detect, bdata->prox_lp_scan_enabled, bdata->enable_sysinput_enabled, bdata->support_spay_gesture);
 
 	return 0;
 }
@@ -454,18 +474,38 @@ static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 	unsigned int idx;
 	unsigned int mode;
 	unsigned int byte_count;
-	struct spi_message msg;
+	struct spi_message *msg;
 	struct spi_device *spi = to_spi_device(tcm_hcd->pdev->dev.parent);
 	const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
+
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+	if (atomic_read(&tcm_hcd->secure_enabled) == SECURE_TOUCH_ENABLE) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: secure touch is enabled!\n", __func__);
+		return -EBUSY;
+	}
+#endif
+
+	if (atomic_read(&tcm_hcd->shutdown)) {
+		input_info(true, tcm_hcd->pdev->dev.parent,"%s: now IC status is shutdown\n", __func__);
+		return -EIO;
+	}
 
 	if (tcm_hcd->lp_state == PWR_OFF) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "power off in suspend\n");
 		return -EIO;
 	}
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
+	msg = kzalloc(sizeof(struct spi_message), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
 	mutex_lock(&tcm_hcd->io_ctrl_mutex);
 
-	spi_message_init(&msg);
+	spi_message_init(msg);
 
 	byte_count = length + 2;
 
@@ -485,15 +525,17 @@ static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		xfer[0].len = 2;
 		xfer[0].tx_buf = buf;
 		xfer[0].speed_hz = bdata->ubl_max_freq;
-		spi_message_add_tail(&xfer[0], &msg);
+		spi_message_add_tail(&xfer[0], msg);
 		memset(&buf[2], 0xff, length);
 		xfer[1].len = length;
 		xfer[1].tx_buf = &buf[2];
 		xfer[1].rx_buf = data;
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 		if (bdata->block_delay_us)
 			xfer[1].delay_usecs = bdata->block_delay_us;
+#endif
 		xfer[1].speed_hz = bdata->ubl_max_freq;
-		spi_message_add_tail(&xfer[1], &msg);
+		spi_message_add_tail(&xfer[1], msg);
 	} else {
 		buf[2] = 0xff;
 		for (idx = 0; idx < byte_count; idx++) {
@@ -504,21 +546,23 @@ static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 				xfer[idx].tx_buf = &buf[2];
 				xfer[idx].rx_buf = &data[idx - 2];
 			}
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 			xfer[idx].delay_usecs = bdata->ubl_byte_delay_us;
 			if (bdata->block_delay_us && (idx == byte_count - 1))
 				xfer[idx].delay_usecs = bdata->block_delay_us;
+#endif
 			xfer[idx].speed_hz = bdata->ubl_max_freq;
-			spi_message_add_tail(&xfer[idx], &msg);
+			spi_message_add_tail(&xfer[idx], msg);
 		}
 	}
 
 	mode = spi->mode;
 	spi->mode = SPI_MODE_3;
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 0);
 
-	retval = spi_sync(spi, &msg);
+	retval = spi_sync(spi, msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
@@ -526,13 +570,14 @@ static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 				"Failed to complete SPI transfer, error = %d\n", retval);
 	}
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 1);
 
 	spi->mode = mode;
 
 exit:
 	mutex_unlock(&tcm_hcd->io_ctrl_mutex);
+	kfree(msg);
 
 	return retval;
 }
@@ -543,18 +588,38 @@ static int syna_tcm_spi_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	int retval;
 	unsigned int mode;
 	unsigned int byte_count;
-	struct spi_message msg;
+	struct spi_message *msg;
 	struct spi_device *spi = to_spi_device(tcm_hcd->pdev->dev.parent);
 	const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
+
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+	if (atomic_read(&tcm_hcd->secure_enabled) == SECURE_TOUCH_ENABLE) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: secure touch is enabled!\n", __func__);
+		return -EBUSY;
+	}
+#endif
+
+	if (atomic_read(&tcm_hcd->shutdown)) {
+		input_info(true, tcm_hcd->pdev->dev.parent,"%s: now IC status is shutdown\n", __func__);
+		return -EIO;
+	}
 
 	if (tcm_hcd->lp_state == PWR_OFF) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "power off in suspend\n");
 		return -EIO;
 	}
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
+	msg = kzalloc(sizeof(struct spi_message), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
 	mutex_lock(&tcm_hcd->io_ctrl_mutex);
 
-	spi_message_init(&msg);
+	spi_message_init(msg);
 
 	byte_count = length + 2;
 
@@ -574,30 +639,34 @@ static int syna_tcm_spi_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 
 	xfer[0].len = byte_count;
 	xfer[0].tx_buf = buf;
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 	if (bdata->block_delay_us)
 		xfer[0].delay_usecs = bdata->block_delay_us;
-	spi_message_add_tail(&xfer[0], &msg);
+#endif
+	spi_message_add_tail(&xfer[0], msg);
 
 	mode = spi->mode;
 	spi->mode = SPI_MODE_3;
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 0);
 
-	retval = spi_sync(spi, &msg);
+	retval = spi_sync(spi, msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
 		input_err(true, &spi->dev,
 				"Failed to complete SPI transfer, error = %d\n", retval);
 	}
-	if (bdata->cs_gpio >= 0)
+
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 1);
 
 	spi->mode = mode;
 
 exit:
 	mutex_unlock(&tcm_hcd->io_ctrl_mutex);
+	kfree(msg);
 
 	return retval;
 }
@@ -607,18 +676,38 @@ static int syna_tcm_spi_read(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 {
 	int retval;
 	unsigned int idx;
-	struct spi_message msg;
+	struct spi_message *msg;
 	struct spi_device *spi = to_spi_device(tcm_hcd->pdev->dev.parent);
 	const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
+
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+	if (atomic_read(&tcm_hcd->secure_enabled) == SECURE_TOUCH_ENABLE) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: secure touch is enabled!\n", __func__);
+		return -EBUSY;
+	}
+#endif
+
+	if (atomic_read(&tcm_hcd->shutdown)) {
+		input_info(true, tcm_hcd->pdev->dev.parent,"%s: now IC status is shutdown\n", __func__);
+		return -EIO;
+	}
 
 	if (tcm_hcd->lp_state == PWR_OFF) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "power off in suspend\n");
 		return -EIO;
 	}
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
+	msg = kzalloc(sizeof(struct spi_message), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
 	mutex_lock(&tcm_hcd->io_ctrl_mutex);
 
-	spi_message_init(&msg);
+	spi_message_init(msg);
 
 	if (bdata->byte_delay_us == 0)
 		retval = syna_tcm_spi_alloc_mem(tcm_hcd, 1, length);
@@ -634,26 +723,30 @@ static int syna_tcm_spi_read(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 		xfer[0].len = length;
 		xfer[0].tx_buf = buf;
 		xfer[0].rx_buf = data;
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 		if (bdata->block_delay_us)
 			xfer[0].delay_usecs = bdata->block_delay_us;
-		spi_message_add_tail(&xfer[0], &msg);
+#endif
+		spi_message_add_tail(&xfer[0], msg);
 	} else {
 		buf[0] = 0xff;
 		for (idx = 0; idx < length; idx++) {
 			xfer[idx].len = 1;
 			xfer[idx].tx_buf = buf;
 			xfer[idx].rx_buf = &data[idx];
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 			xfer[idx].delay_usecs = bdata->byte_delay_us;
 			if (bdata->block_delay_us && (idx == length - 1))
 				xfer[idx].delay_usecs = bdata->block_delay_us;
-			spi_message_add_tail(&xfer[idx], &msg);
+#endif
+			spi_message_add_tail(&xfer[idx], msg);
 		}
 	}
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 0);
 
-	retval = spi_sync(spi, &msg);
+	retval = spi_sync(spi, msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
@@ -661,10 +754,11 @@ static int syna_tcm_spi_read(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 				"Failed to complete SPI transfer, error = %d\n", retval);
 	}
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 1);
 exit:
 	mutex_unlock(&tcm_hcd->io_ctrl_mutex);
+	kfree(msg);
 
 	return retval;
 }
@@ -674,18 +768,38 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 {
 	int retval;
 	unsigned int idx;
-	struct spi_message msg;
+	struct spi_message *msg;
 	struct spi_device *spi = to_spi_device(tcm_hcd->pdev->dev.parent);
 	const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
+
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+	if (atomic_read(&tcm_hcd->secure_enabled) == SECURE_TOUCH_ENABLE) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: secure touch is enabled!\n", __func__);
+		return -EBUSY;
+	}
+#endif
+
+	if (atomic_read(&tcm_hcd->shutdown)) {
+		input_info(true, tcm_hcd->pdev->dev.parent,"%s: now IC status is shutdown\n", __func__);
+		return -EIO;
+	}
 
 	if (tcm_hcd->lp_state == PWR_OFF) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "power off in suspend\n");
 		return -EIO;
 	}
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+	if (STUI_MODE_TOUCH_SEC & stui_get_mode())
+		return -EBUSY;
+#endif
+	msg = kzalloc(sizeof(struct spi_message), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
 	mutex_lock(&tcm_hcd->io_ctrl_mutex);
 
-	spi_message_init(&msg);
+	spi_message_init(msg);
 
 	if (bdata->byte_delay_us == 0)
 		retval = syna_tcm_spi_alloc_mem(tcm_hcd, 1, 0);
@@ -699,24 +813,28 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	if (bdata->byte_delay_us == 0) {
 		xfer[0].len = length;
 		xfer[0].tx_buf = data;
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 		if (bdata->block_delay_us)
 			xfer[0].delay_usecs = bdata->block_delay_us;
-		spi_message_add_tail(&xfer[0], &msg);
+#endif
+		spi_message_add_tail(&xfer[0], msg);
 	} else {
 		for (idx = 0; idx < length; idx++) {
 			xfer[idx].len = 1;
 			xfer[idx].tx_buf = &data[idx];
+#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 			xfer[idx].delay_usecs = bdata->byte_delay_us;
 			if (bdata->block_delay_us && (idx == length - 1))
 				xfer[idx].delay_usecs = bdata->block_delay_us;
-			spi_message_add_tail(&xfer[idx], &msg);
+#endif
+			spi_message_add_tail(&xfer[idx], msg);
 		}
 	}
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 0);
 
-	retval = spi_sync(spi, &msg);
+	retval = spi_sync(spi, msg);
 	if (retval == 0) {
 		retval = length;
 	} else {
@@ -724,11 +842,12 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 				"Failed to complete SPI transfer, error = %d\n", retval);
 	}
 
-	if (bdata->cs_gpio >= 0)
+	if (bdata->support_cs_gpio_control && bdata->cs_gpio >= 0)
 		gpio_set_value(bdata->cs_gpio, 1);
 
 exit:
 	mutex_unlock(&tcm_hcd->io_ctrl_mutex);
+	kfree(msg);
 
 	return retval;
 }
@@ -736,6 +855,8 @@ exit:
 static int syna_tcm_spi_probe(struct spi_device *spi)
 {
 	int retval;
+
+	pr_info("[sec_input] %s : start\n", __func__);
 
 #ifdef CONFIG_OF
 	hw_if.bdata = devm_kzalloc(&spi->dev, sizeof(*hw_if.bdata), GFP_KERNEL);
@@ -794,6 +915,12 @@ static int syna_tcm_spi_probe(struct spi_device *spi)
 		return retval;
 	}
 
+#if IS_ENABLED(CONFIG_SPI_MT65XX)
+    /* new usage of MTK spi API */
+    memcpy(&hw_if.bdata->spi_ctrl, &synap_spi_ctrdata, sizeof(struct mtk_chip_config));
+    spi->controller_data = (void *)&hw_if.bdata->spi_ctrl;
+#endif
+
 	syna_tcm_spi_device->dev.parent = &spi->dev;
 	syna_tcm_spi_device->dev.platform_data = &hw_if;
 
@@ -824,7 +951,11 @@ MODULE_DEVICE_TABLE(spi, syna_tcm_id_table);
 #ifdef CONFIG_OF
 static struct of_device_id syna_tcm_of_match_table[] = {
 	{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+		.compatible = "syna_tcm_spi",
+#else
 		.compatible = "synaptics,tcm-spi",
+#endif
 	},
 	{},
 };

@@ -43,17 +43,38 @@
 #include <linux/input.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
-#include <linux/input/synaptics_tcm.h>
-#ifdef CONFIG_FB
-#include <linux/fb.h>
 #include <linux/notifier.h>
-#endif
+#if IS_ENABLED(CONFIG_INPUT_SEC_INPUT)
+#include "../../../sec_input/sec_input.h"
+#else
 #include <linux/input/sec_cmd.h>
+#endif
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+#include <linux/input/stui_inf.h>
+#endif
 #include <linux/regulator/consumer.h>
+#include <linux/input/synaptics_tcm.h>
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+#include "../../../sec_input/sec_secure_touch.h"
+#include <linux/atomic.h>
+#include <linux/clk.h>
+#include <linux/pm_runtime.h>
 
-#define INPUT_FEATURE_ENABLE_SETTINGS_AOT	(1 << 0) /* Double tap wakeup settings */
+#define SECURE_TOUCH_ENABLE	1
+#define SECURE_TOUCH_DISABLE	0
+#endif
 
 #define TOUCH_PRINT_INFO_DWORK_TIME	30000	/* 30s */
+
+#define LOGD(dev, log, ...) input_dbg(true, dev, log, ##__VA_ARGS__)
+#define LOGN(dev, log, ...) input_info(true, dev, log, ##__VA_ARGS__)
+#define LOGE(dev, log, ...) input_err(true, dev, log, ##__VA_ARGS__)
+
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
+#define RESPONSE_TIMEOUT_MS 3000
+#else
+#define RESPONSE_TIMEOUT_MS 1000
+#endif
 
 /* #define USE_FLASH */
 
@@ -78,7 +99,7 @@
 #define MESSAGE_MARKER 0xa5
 #define MESSAGE_PADDING 0x5a
 
-#define MAX_FINGER_NUM	5
+#define MAX_FINGER_NUM	10
 #define LOCATION_DETECT_SIZE	6
 
 /*
@@ -96,20 +117,6 @@
 
 #define HOST_DOWNLOAD_WAIT_MS 100
 #define HOST_DOWNLOAD_TIMEOUT_MS 500
-
-#if 0
-#define LOGx(func, dev, log, ...) \
-	func(dev, "%s info: " log, __func__, ##__VA_ARGS__)
-
-#define LOGy(func, dev, log, ...) \
-	func(dev, "%s error: (line %d) " log, __func__, __LINE__, ##__VA_ARGS__)
-
-#define LOGD(dev, log, ...) LOGx(dev_dbg, dev, log, ##__VA_ARGS__)
-#define LOGI(dev, log, ...) LOGx(dev_info, dev, log, ##__VA_ARGS__)
-#define LOGN(dev, log, ...) LOGx(dev_notice, dev, log, ##__VA_ARGS__)
-#define LOGW(dev, log, ...) LOGy(dev_warn, dev, log, ##__VA_ARGS__)
-#define LOGE(dev, log, ...) LOGy(dev_err, dev, log, ##__VA_ARGS__)
-#endif
 
 #define INIT_BUFFER(buffer, is_clone) \
 	mutex_init(&buffer.buf_mutex); \
@@ -244,6 +251,7 @@ enum dynamic_config_id {
 	DC_START_STOP_TOUCH_WORK = 0xD8,
 	DC_SIP_MODE = 0xD9,
 	DC_GAME_MODE = 0xDA,
+	DC_ENABLE_GESTURE_TYPE = 0xFE,
 };
 
 enum cmd {
@@ -289,6 +297,10 @@ enum cmd {
 	CMD_ROMBOOT_DOWNLOAD = 0x45,
 	CMD_SET_SCAN_START_STOP = 0xb0,
 	CMD_GET_FACE_AREA = 0xC3,	// 195
+	CMD_GET_LPWG_DOUBLE_TAP_INFO = 0xC4,	// 195
+	CMD_GET_SAVE_RAW_DATA = 0xce,
+	CMD_SET_SAVE_RAW_DATA = 0xcf,
+	CMD_GET_SEC_FEATURES_LIST = 0xd0,
 };
 
 enum status_code {
@@ -352,6 +364,16 @@ enum power_state {
 	PWR_ON = 0,
 	PWR_OFF,
 	LP_MODE,
+};
+
+enum USB_PLUG_SATUS {
+	USB_PLUG_DETACHED = 0,
+	USB_PLUG_ATTACHED = 1
+};
+
+enum GLOVE_MODE_SATUS {
+	UNSET_GLOVE_MODE = 0,
+	SET_GLOVE_MODE = 1
 };
 
 struct syna_tcm_helper {
@@ -457,6 +479,19 @@ struct syna_tcm_features {
 	unsigned char byte_2_reserved:7;
 } __packed;
 
+struct syna_tcm_sec_features {
+	unsigned char facemode1support:1;
+	unsigned char byte_0_reserved:7;
+	unsigned char byte_1_reserved;
+} __packed;
+
+struct syna_tcm_gesture_type {
+	unsigned char doubletap:1;
+	unsigned char byte_0_reserved:7;
+	unsigned char byte_1_reserved:7;
+	unsigned char swipeup:1;
+} __packed;
+
 struct syna_tcm_hcd {
 	pid_t isr_pid;
 	atomic_t command_status;
@@ -468,11 +503,11 @@ struct syna_tcm_hcd {
 	int irq_wake;
 	bool do_polling;
 //	bool in_suspend;
+	atomic_t shutdown;
 	bool irq_enabled;
 	bool in_hdl_mode;
 	bool is_detected;
 	bool boot_resume;
-	unsigned int wakeup_gesture_enabled;
 	unsigned int lp_state;
 	unsigned int early_resume_cnt;
 	unsigned int prox_lp_scan_cnt;
@@ -501,6 +536,9 @@ struct syna_tcm_hcd {
 	struct regulator *regulator_vdd;
 	struct regulator *regulator_lcd_reset;
 	struct regulator *regulator_lcd_bl_en;
+	struct regulator *regulator_lcd_vsp;
+	struct regulator *regulator_lcd_vsn;
+	struct regulator *regulator_tsp_reset;
 	struct platform_device *pdev;
 	struct pinctrl *pinctrl;
 	struct regulator *pwr_reg;
@@ -520,9 +558,6 @@ struct syna_tcm_hcd {
 	struct task_struct *notifier_thread;
 	struct delayed_work	work_print_info;
 	struct delayed_work work_read_info;
-#ifdef CONFIG_FB
-	struct notifier_block fb_notifier;
-#endif
 	struct syna_tcm_buffer in;
 	struct syna_tcm_buffer out;
 	struct syna_tcm_buffer resp;
@@ -537,8 +572,11 @@ struct syna_tcm_hcd {
 	struct syna_tcm_helper helper;
 	struct syna_tcm_watchdog watchdog;
 	struct syna_tcm_features features;
+	struct syna_tcm_sec_features sec_features;
+	struct syna_tcm_gesture_type syna_tcm_gesture_type;
 	struct sec_cmd_data sec;
 	struct completion resume_done;
+	struct input_dev *input_dev;
 	char *print_buf;
 	short *pFrame;
 	unsigned char *image;
@@ -552,11 +590,36 @@ struct syna_tcm_hcd {
 	bool tsp_dump_lock;
 	long prox_power_off;
 	u8 hover_event;	//virtual_prox
-	bool aot_enable;
 	int sip_mode;
 	int game_mode;
+	uint8_t glove_enabled;
 	bool lcdoff_test;
 	const struct syna_tcm_hw_interface *hw_if;
+	int USB_detect_flag;
+#if IS_ENABLED(CONFIG_FB)
+	struct notifier_block fb_notif;
+	struct work_struct fb_resume_work;
+#endif
+	bool sysinput_seen;
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+	struct work_struct usb_notifier_work;
+	struct workqueue_struct *usb_notifier_workqueue;
+	struct notifier_block vbus_nb;
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+	struct notifier_block ccic_nb;
+#endif
+#endif
+#if IS_ENABLED(CONFIG_INPUT_SEC_SECURE_TOUCH)
+	atomic_t secure_enabled;
+	atomic_t secure_pending_irqs;
+	struct completion secure_powerdown;
+	struct completion secure_interrupt;
+	struct mutex secure_lock;
+#endif
+	u8 *lpwg_dump_buf;
+	u16 lpwg_dump_buf_idx;
+	u16 lpwg_dump_buf_size;
+
 	int (*reset)(struct syna_tcm_hcd *tcm_hcd);
 	int (*reset_n_reinit)(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd);
 	int (*sleep)(struct syna_tcm_hcd *tcm_hcd, bool en);
@@ -633,6 +696,11 @@ struct syna_tcm_hw_interface {
 	const struct syna_tcm_bus_io *bus_io;
 };
 
+#if IS_ENABLED(CONFIG_SAMSUNG_TUI)
+extern struct device *ptsp;
+extern void stui_tsp_init(int (*stui_tsp_enter)(void), int (*stui_tsp_exit)(void), int (*stui_tsp_type)(void));
+#endif
+
 int syna_tcm_bus_init(void);
 
 void syna_tcm_bus_exit(void);
@@ -642,9 +710,6 @@ int syna_tcm_add_module(struct syna_tcm_module_cb *mod_cb, bool insert);
 int touch_init(struct syna_tcm_hcd *tcm_hcd);
 int touch_remove(struct syna_tcm_hcd *tcm_hcd);
 int touch_reinit(struct syna_tcm_hcd *tcm_hcd);
-int touch_early_suspend(struct syna_tcm_hcd *tcm_hcd);
-int touch_suspend(struct syna_tcm_hcd *tcm_hcd);
-int touch_resume(struct syna_tcm_hcd *tcm_hcd);
 int sec_fn_init(struct syna_tcm_hcd *tcm_hcd);
 void sec_fn_remove(struct syna_tcm_hcd *tcm_hcd);
 void sec_run_rawdata(struct syna_tcm_hcd *tcm_hcd);
@@ -654,6 +719,15 @@ int syna_tcm_power_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 int syna_tcm_reset_ctrl(struct syna_tcm_hcd *tcm_hcd, bool on);
 void touch_free_objects(void);
 void touch_reset_proximity(void);
+
+int syna_tcm_suspend(struct device *dev);
+int syna_tcm_early_suspend(struct device *dev);
+int syna_tcm_resume(struct device *dev);
+int syna_tcm_early_resume(struct device *dev);
+int syna_pinctrl_configure(struct syna_tcm_hcd *tcm_hcd, bool enable);
+int syna_set_config_mode(struct syna_tcm_hcd *tcm_hcd, enum dynamic_config_id id,
+									char *config_name, unsigned short value);
+
 
 static inline int syna_tcm_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
@@ -729,8 +803,7 @@ static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
 			dev_err(tcm_hcd->pdev->dev.parent,
 					"%s: Failed to allocate memory\n",
 					__func__);
-			kfree(temp);
-			buffer->buf_size = 0;
+			buffer->buf = temp;
 			return -ENOMEM;
 		}
 
@@ -802,8 +875,10 @@ static inline unsigned int ceil_div(unsigned int dividend, unsigned divisor)
 }
 
 extern int syna_tcm_set_scan_start_stop_cmd(struct syna_tcm_hcd *tcm_hcd, unsigned char value);
+ssize_t get_lp_dump(struct device *dev, struct device_attribute *attr, char *buf);
+int syna_lpwg_dump_buf_read(struct syna_tcm_hcd *tcm_hcd, u8 *buf);
 
-#if defined(CONFIG_EXYNOS_DPU30)
+#if IS_ENABLED(CONFIG_EXYNOS_DPU30)
 int get_lcd_info(char *arg);
 #endif
 

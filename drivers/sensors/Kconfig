@@ -53,6 +53,20 @@ config SENSORS_A96T3X6_CRC_CHECK
 	help
 	  To use crc check by fw not checking checksum, active this feature
 
+config SENSORS_A96T3X6_M12_ALL
+	depends on I2C
+	tristate "A96T3X6 grip frimware for ALL"
+	default n
+	help
+	  If you say yes here if you use A96T3X6 for M12 ALL.
+
+config SENSORS_A96T3X6_M12_KOR
+	depends on I2C
+	tristate "A96T3X6 grip frimware for ALL"
+	default n
+	help
+	  If you say yes here if you use A96T3X6 for M12 KOR.
+
 #
 # grip sensors configuration
 #

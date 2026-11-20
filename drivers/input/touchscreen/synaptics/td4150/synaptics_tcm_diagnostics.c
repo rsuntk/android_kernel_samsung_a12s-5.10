@@ -48,7 +48,7 @@ struct diag_hcd {
 	unsigned char report_type;
 	enum pingpong_state state;
 	struct kobject *sysfs_dir;
-	struct siginfo sigio;
+	struct kernel_siginfo sigio;
 	struct task_struct *task;
 	struct syna_tcm_buffer ping;
 	struct syna_tcm_buffer pong;

@@ -182,7 +182,7 @@ static struct bin_attribute bin_attr = {
 static ssize_t recovery_sysfs_romboot_recovery_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	int retval;
+	int retval = 0;
 	unsigned int input;
 	struct syna_tcm_hcd *tcm_hcd = recovery_hcd->tcm_hcd;
 
@@ -1168,7 +1168,7 @@ static int recovery_do_f35_recovery(void)
 
 static int recovery_init(struct syna_tcm_hcd *tcm_hcd)
 {
-	int retval;
+	int retval = 0;
 	int idx;
 
 	recovery_hcd = kzalloc(sizeof(*recovery_hcd), GFP_KERNEL);

@@ -238,6 +238,7 @@ static int device_capture_touch_report_config(unsigned int count)
 	return 0;
 }
 
+
 static long device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int retval;
@@ -517,16 +518,17 @@ static int device_create_class(void)
 	return 0;
 }
 
-static const struct proc_ops device_fops = {
-	.proc_ioctl = device_ioctl,
-#ifdef HAVE_COMPAT_IOCTL
-	.proc_compat_ioctl = device_ioctl,
+static const struct file_operations device_fops = {
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = device_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = device_ioctl,
 #endif
-	.proc_lseek = device_llseek,
-	.proc_read = device_read,
-	.proc_write = device_write,
-	.proc_open = device_open,
-	.proc_release = device_release,
+	.llseek = device_llseek,
+	.read = device_read,
+	.write = device_write,
+	.open = device_open,
+	.release = device_release,
 };
 
 static int device_init(struct syna_tcm_hcd *tcm_hcd)

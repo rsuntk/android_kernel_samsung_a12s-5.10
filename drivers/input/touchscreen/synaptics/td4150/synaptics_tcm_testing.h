@@ -69,6 +69,8 @@ enum test_code {
 	TEST_CHECK_CONNECT = 0xC1,
 	TEST_SENSITIVITY = 0xC2,
 	TEST_FACE_DELTA = 0xC3,	// 195
+	TEST_SRAM_TEST_START_CMD_NO_RESPONSE = 0xc5,   //after this command, fw will reset itself
+	TEST_SRAM_TEST_GET_TEST_RESULT = 0xc6,         //get the command c5 result
 };
 
 struct testing_hcd {

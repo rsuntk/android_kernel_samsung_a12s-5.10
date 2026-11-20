@@ -125,6 +125,18 @@ config SUPPORT_VCOM_TRIM_TEST
 	bool "Support VCOM TRIM test"
 	default n
 
+config EXYNOS_DECON_LCD_ILI9882N_M12S
+	depends on EXYNOS_DECON_LCD
+	tristate "ILI9882N_M12S LCD driver"
+
+config EXYNOS_DECON_LCD_NT36675_M12
+	depends on EXYNOS_DECON_LCD
+	tristate "NT36675_M12 LCD driver"
+
+config EXYNOS_DECON_LCD_ILI7806S_M12
+	depends on EXYNOS_DECON_LCD
+	tristate "ILI7806S_M12 LCD driver"
+
 config EXYNOS_DECON_LCD_NT36525B_CTC_A12S
 	depends on EXYNOS_DECON_LCD
 	tristate "NT36525B_CTC_A12S LCD driver"

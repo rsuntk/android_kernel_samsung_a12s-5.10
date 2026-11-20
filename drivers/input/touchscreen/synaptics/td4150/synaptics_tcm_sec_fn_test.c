@@ -470,6 +470,68 @@ exit:
 	return retval;
 }
 
+int test_fw_ram(struct sec_cmd_data *sec)
+{
+	extern int syna_tcm_wait_hdl(struct syna_tcm_hcd *tcm_hcd);
+	int retval = 0;
+	struct syna_tcm_hcd *tcm_hcd = sec_fn_test->tcm_hcd;
+	char buff[SEC_CMD_STR_LEN] = { 0 };
+
+	input_dbg(true, tcm_hcd->pdev->dev.parent,
+			"Start testing fw ram\n");
+
+	retval = testing_run_prod_test_item(sec_fn_test, TEST_SRAM_TEST_START_CMD_NO_RESPONSE);
+	if (retval < 0) {
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"will get error response when do TEST_SRAM_TEST_START_CMD_NO_RESPONSE, ignore it and wait for HDL Done\n");
+	}
+
+	retval = syna_tcm_wait_hdl(tcm_hcd);
+	if (retval < 0) {
+		input_err(true, tcm_hcd->pdev->dev.parent,
+			"Timed out waiting for completion of host download\n");
+		atomic_set(&tcm_hcd->host_downloading, 0);
+		retval = -EIO;
+		goto exit;
+	} else {
+		retval = 0;
+	}
+
+	retval = testing_run_prod_test_item(sec_fn_test, TEST_SRAM_TEST_GET_TEST_RESULT);
+	if (retval < 0) {
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"fail to get response of command TEST_SRAM_TEST_GET_TEST_RESULT\n");
+		goto exit;
+	}
+
+	input_err(true, tcm_hcd->pdev->dev.parent,
+				"buf[0]:%x  buf[1]:%x  buf[2]:%x buf[3]:%x buf[4]:%x buf[5]:%x\n", sec_fn_test->resp.buf[0],
+				sec_fn_test->resp.buf[1], sec_fn_test->resp.buf[2], sec_fn_test->resp.buf[3], sec_fn_test->resp.buf[4],
+				sec_fn_test->resp.buf[5]);
+
+	if ((sec_fn_test->resp.buf[0] == 0x4f) && (sec_fn_test->resp.buf[1] == 0x00)) {  //0x4f and 0x00 is ok case
+		snprintf(buff, sizeof(buff), "%d", TEST_RESULT_PASS);
+		sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	} else {
+		snprintf(buff, sizeof(buff), "%d", TEST_RESULT_FAIL);
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"fail to check stram test resp value\n");
+	}
+	sec->cmd_state = SEC_CMD_STATUS_OK;
+	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
+		sec_cmd_set_cmd_result_all(sec, buff, strnlen(buff, sizeof(buff)), "SRAM");
+
+	return retval;
+
+exit:
+	snprintf(buff, sizeof(buff), "NG");
+	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	sec->cmd_state = SEC_CMD_STATUS_FAIL;
+	if (sec->cmd_all_factory_state == SEC_CMD_STATUS_RUNNING)
+		sec_cmd_set_cmd_result_all(sec, buff, strnlen(buff, sizeof(buff)), "SRAM");
+
+	return retval;
+}
 
 #define NOISE_DELTA_MAX 100
 int syna_tcm_get_face_area(int *data_sum, struct sec_factory_test_mode *mode)

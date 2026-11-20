@@ -36,9 +36,31 @@
 
 #include "synaptics_tcm_sec_fn.h"
 
-#define TSP_PATH_EXTERNAL_FW		"/sdcard/Firmware/TSP/tsp.bin"
-#define TSP_PATH_EXTERNAL_FW_SIGNED	"/sdcard/Firmware/TSP/tsp_signed.bin"
-#define TSP_PATH_SPU_FW_SIGNED		"/spu/TSP/ffu_tsp.bin"
+enum display_state {
+	DISPLAY_STATE_SERVICE_SHUTDOWN = -1,
+	DISPLAY_STATE_NONE = 0,
+	DISPLAY_STATE_OFF,
+	DISPLAY_STATE_ON,
+	DISPLAY_STATE_DOZE,
+	DISPLAY_STATE_DOZE_SUSPEND,
+	DISPLAY_STATE_LPM_OFF = 20,
+};
+
+enum display_event {
+	DISPLAY_EVENT_EARLY = 0,
+	DISPLAY_EVENT_LATE,
+};
+
+#define TSP_EXTERNAL_FW		"/sdcard/Firmware/TSP/tsp.bin"
+#define TSP_EXTERNAL_FW_SIGNED	"/sdcard/Firmware/TSP/tsp_signed.bin"
+
+struct syna_tcm_hcd *private_tcm_hcd;
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+static int otg_flag;
+#endif
+#endif
 
 enum {
 	BUILT_IN = 0,
@@ -77,17 +99,19 @@ out:
 	input_raw_info(true, tcm_hcd->pdev->dev.parent, "%s: done ##\n", __func__);
 	tcm_hcd->tsp_dump_lock = false;
 }
-
+#ifdef SUPPORT_FW_SIGNED
 extern int long spu_firmware_signature_verify(const char* fw_name, const u8* fw_data, const long fw_size);
+#endif
 
-static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd,  bool signing, const char *file_path)
+static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd, bool signing, const char *file_path)
 {
 	struct file *fp;
 	mm_segment_t old_fs;
-	int fw_size, nread;
+	long fw_size;
+	int nread;
 	int error = 0;
 	unsigned char *fw_data;
-	size_t spu_fw_size;
+	size_t spu_fw_size = 0;
 	size_t spu_ret = 0;
 
 	old_fs = get_fs();
@@ -96,9 +120,9 @@ static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd,  bool signing, const cha
 	fp = filp_open(file_path, O_RDONLY, S_IRUSR);
 	if (IS_ERR(fp)) {
 		input_err(true, tcm_hcd->pdev->dev.parent,
-			"%s: failed to open %s\n", __func__,file_path);
+			"%s: failed to open %s\n", __func__, file_path);
 		set_fs(old_fs);
-		return error;
+		return PTR_ERR(fp);
 	}
 
 	fw_size = fp->f_path.dentry->d_inode->i_size;
@@ -106,7 +130,9 @@ static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd,  bool signing, const cha
 	if (signing) {
 		/* name 3, digest 32, signature 512 */
 		spu_fw_size = fw_size;
+#ifdef SUPPORT_FW_SIGNED
 		fw_size -= SPU_METADATA_SIZE(TSP);
+#endif
 	}
 
 	if (fw_size > 0) {
@@ -126,22 +152,24 @@ static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd,  bool signing, const cha
 				error = -ENOMEM;
 				vfree(fw_data);
 				goto open_err;
-			}			
-			nread = vfs_read(fp, (char __user *)spu_fw_data, spu_fw_size, &fp->f_pos);
+			}
 
+			nread = vfs_read(fp, (char __user *)spu_fw_data, spu_fw_size, &fp->f_pos);
 			input_info(true, tcm_hcd->pdev->dev.parent,
-				"%s: start, file path %s, size %ld Bytes\n", __func__, file_path, spu_fw_size);
+				"%s: start, file path %s, size %zu Bytes\n", __func__, file_path, spu_fw_size);
 
 			if (nread != spu_fw_size) {
 				input_err(true, tcm_hcd->pdev->dev.parent,
-					"%s: failed to read firmware file, nread %u Bytes\n",
+					"%s: failed to read firmware file, nread %d Bytes\n",
 					__func__, nread);
 				error = -EIO;
 				vfree(fw_data);
 				vfree(spu_fw_data);
 				goto open_err;
 			}
+#ifdef SUPPORT_FW_SIGNED
 			spu_ret = spu_firmware_signature_verify("TSP", spu_fw_data, spu_fw_size);
+#endif
 			if (spu_ret != fw_size) {
 				input_err(true, tcm_hcd->pdev->dev.parent, "%s: signature verify failed, %zu\n",
 						__func__, spu_ret);
@@ -154,15 +182,13 @@ static int sec_fn_load_fw(struct syna_tcm_hcd *tcm_hcd,  bool signing, const cha
 			memcpy(fw_data, spu_fw_data, fw_size);
 			vfree(spu_fw_data);
 		} else {
-			nread = vfs_read(fp, (char __user *)fw_data,
-				fw_size, &fp->f_pos);
-
+			nread = vfs_read(fp, (char __user *)fw_data, fw_size, &fp->f_pos);
 			input_info(true, tcm_hcd->pdev->dev.parent,
 				"%s: start, file path %s, size %ld Bytes\n", __func__, file_path, fw_size);
 
 			if (nread != fw_size) {
 				input_err(true, tcm_hcd->pdev->dev.parent,
-					"%s: failed to read firmware file, nread %u Bytes\n",
+					"%s: failed to read firmware file, nread %d Bytes\n",
 					__func__, nread);
 				error = -EIO;
 				vfree(fw_data);
@@ -219,10 +245,10 @@ static void fw_update(void *device_data)
 		break;
 	case UMS:
 		tcm_hcd->get_fw = UMS;
-#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
-		retval = sec_fn_load_fw(tcm_hcd, SIGNING, TSP_PATH_EXTERNAL_FW_SIGNED);
+#if IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)
+		retval = sec_fn_load_fw(tcm_hcd, SIGNING, TSP_EXTERNAL_FW_SIGNED);
 #else
-		retval = sec_fn_load_fw(tcm_hcd, NORMAL, TSP_PATH_EXTERNAL_FW);
+		retval = sec_fn_load_fw(tcm_hcd, NORMAL, TSP_EXTERNAL_FW);
 #endif
 		if (retval < 0) {
 			tcm_hcd->force_update = false;
@@ -430,6 +456,14 @@ static void run_noise_test_read_all(void *device_data)
 	test_noise(sec, &mode);
 }
 
+static void run_sram_test(void *device_data)
+{
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+
+	sec_cmd_set_default_result(sec);
+	test_fw_ram(sec);
+}
+
 static void get_gap_data_x_all(void *device_data)
 {
 	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
@@ -480,7 +514,9 @@ static void factory_cmd_result_all(void *device_data)
 {
 	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
 	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
-
+#ifdef CONFIG_SEC_FACTORY
+	int retval;
+#endif
 	sec->item_count = 0;
 	memset(sec->cmd_result_all, 0x00, SEC_CMD_RESULT_STR_LEN);
 
@@ -494,6 +530,17 @@ static void factory_cmd_result_all(void *device_data)
 	run_dynamic_range_test_read(sec);
 	run_open_short_test_read(sec);
 	run_noise_test_read(sec);
+	run_sram_test(sec);
+
+#ifdef CONFIG_SEC_FACTORY
+	retval = tcm_hcd->set_dynamic_config(tcm_hcd, DC_ENABLE_EDGE_REJECT, 1);
+	if (retval < 0)
+		input_err(true, tcm_hcd->pdev->dev.parent, "Failed to enable edge reject\n");
+	else
+		input_info(true, tcm_hcd->pdev->dev.parent, "enable edge reject\n");
+
+	msleep(50);
+#endif
 
 	sec->cmd_all_factory_state = SEC_CMD_STATUS_OK;
 
@@ -530,7 +577,7 @@ static void incell_power_control(void *device_data)
 	sec_cmd_set_default_result(sec);
 
 	if (sec->cmd_param[0] < 0 || sec->cmd_param[0] > 1) {
-		input_err(true, tcm_hcd->pdev->dev.parent, "%s: invalid parameter %d\n", __func__);
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: invalid parameter %d\n", __func__, sec->cmd_param[0]);
 		snprintf(buff, sizeof(buff), "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
 		goto exit;
@@ -636,15 +683,20 @@ static void aot_enable(void *device_data)
 
 	sec_cmd_set_default_result(sec);
 
-	if (sec->cmd_param[0] < 0 || sec->cmd_param[0] > 1) {
+	if (!tcm_hcd->hw_if->bdata->enable_settings_aot) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: Not support AOT(%d)\n", __func__, sec->cmd_param[0]);
+		snprintf(buff, sizeof(buff), "NG");
+		sec->cmd_state = SEC_CMD_STATUS_FAIL;
+	} else if (sec->cmd_param[0] < 0 || sec->cmd_param[0] > 1) {
 		snprintf(buff, sizeof(buff), "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
 	} else {
-		tcm_hcd->aot_enable = sec->cmd_param[0];
-		tcm_hcd->wakeup_gesture_enabled = tcm_hcd->aot_enable;
+		tcm_hcd->syna_tcm_gesture_type.doubletap = sec->cmd_param[0];
+		syna_set_config_mode(tcm_hcd, DC_ENABLE_GESTURE_TYPE, "gesture",
+			((tcm_hcd->syna_tcm_gesture_type.swipeup << 15) | tcm_hcd->syna_tcm_gesture_type.doubletap));
 
-		input_info(true, tcm_hcd->pdev->dev.parent,
-						"enable AOT %d\n", tcm_hcd->wakeup_gesture_enabled);
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s: AOT %s(%d)\n",
+				__func__, sec->cmd_param[0] ? "on" : "off", tcm_hcd->syna_tcm_gesture_type.doubletap);
 
 		snprintf(buff, sizeof(buff), "OK");
 		sec->cmd_state = SEC_CMD_STATUS_OK;
@@ -653,6 +705,45 @@ static void aot_enable(void *device_data)
 	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
 	sec_cmd_set_cmd_exit(sec);
 }
+
+static void spay_enable(void *device_data)
+{
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+	char buff[SEC_CMD_STR_LEN] = { 0 };
+
+	sec_cmd_set_default_result(sec);
+
+	if (!tcm_hcd->hw_if->bdata->support_spay_gesture) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: Not support SPAY!\n", __func__);
+		goto out;
+	}
+
+	if (sec->cmd_param[0] < 0 || sec->cmd_param[0] > 1) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: Not defined value.\n", __func__);
+		goto out;
+	} else {
+		tcm_hcd->syna_tcm_gesture_type.swipeup = sec->cmd_param[0];
+		syna_set_config_mode(tcm_hcd, DC_ENABLE_GESTURE_TYPE, "gesture",
+			((tcm_hcd->syna_tcm_gesture_type.swipeup << 15) | tcm_hcd->syna_tcm_gesture_type.doubletap));
+	}
+
+	snprintf(buff, sizeof(buff), "OK");
+	sec->cmd_state = SEC_CMD_STATUS_OK;
+	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	sec_cmd_set_cmd_exit(sec);
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: spay(swipeup) %s(%d)\n",
+			__func__, sec->cmd_param[0] ? "on" : "off", tcm_hcd->syna_tcm_gesture_type.swipeup);
+
+	return;
+out:
+	snprintf(buff, sizeof(buff), "NG");
+	sec->cmd_state = SEC_CMD_STATUS_FAIL;
+	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	sec_cmd_set_cmd_exit(sec);
+}
+
 
 /*
  *	cmd_param
@@ -749,7 +840,7 @@ exit:
 	sec_cmd_set_cmd_exit(sec);
 }
 
-#if !defined(CONFIG_SEC_FACTORY)
+#if !IS_ENABLED(CONFIG_SEC_FACTORY)
 static void dead_zone_enable(void *device_data)
 {
 	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
@@ -798,7 +889,11 @@ static void ear_detect_enable(void *device_data)
 
 	tcm_hcd->ear_detect_enable = sec->cmd_param[0];
 
-	if (tcm_hcd->lp_state != PWR_ON) {
+	if (tcm_hcd->sec_features.facemode1support && tcm_hcd->lp_state == PWR_OFF) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: face mode 1 support - %s skip!(%d)\n",
+					__func__, "Power off", tcm_hcd->lp_state);
+		goto out;
+	} else if (!tcm_hcd->sec_features.facemode1support && tcm_hcd->lp_state != PWR_ON) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "%s: %s skip!(%d)\n",
 					__func__, tcm_hcd->lp_state == PWR_OFF ? "Power off" : "LP mode", tcm_hcd->lp_state);
 		goto out;
@@ -943,6 +1038,52 @@ exit:
 	return;
 }
 
+static void glove_mode(void *device_data)
+{
+	char buff[SEC_CMD_STR_LEN] = { 0 };
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+
+	sec_cmd_set_default_result(sec);
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s,%d\n", __func__, sec->cmd_param[0]);
+
+	tcm_hcd->glove_enabled = sec->cmd_param[0];
+
+	if (tcm_hcd->lp_state != PWR_ON) {
+		input_err(true, tcm_hcd->pdev->dev.parent, "%s: not power on\n", __func__);
+		snprintf(buff, sizeof(buff), "NG");
+		sec->cmd_state = SEC_CMD_STATUS_FAIL;
+		goto out;
+	}
+
+	switch (sec->cmd_param[0]) {
+	case 0:
+		sec->cmd_state = SEC_CMD_STATUS_OK;
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s Unset Glove Mode\n", __func__);
+		tcm_hcd->set_dynamic_config(private_tcm_hcd, DC_ENABLE_SENSITIVITY, UNSET_GLOVE_MODE);
+		break;
+	case 1:
+		sec->cmd_state = SEC_CMD_STATUS_OK;
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s set Glove Mode\n", __func__);
+		tcm_hcd->set_dynamic_config(private_tcm_hcd, DC_ENABLE_SENSITIVITY, SET_GLOVE_MODE);
+		break;
+	default:
+		sec->cmd_state = SEC_CMD_STATUS_FAIL;
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s Invalid Argument\n", __func__);
+		break;
+	}
+
+	if (sec->cmd_state == SEC_CMD_STATUS_OK)
+		snprintf(buff, sizeof(buff), "%s", "OK");
+	else
+		snprintf(buff, sizeof(buff), "%s", "NG");
+out:
+	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	sec_cmd_set_cmd_exit(sec);
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s %s(%d)\n", __func__, buff, (int)strnlen(buff, sizeof(buff)));
+}
+
 static void not_support_cmd(void *device_data)
 {
 	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
@@ -970,6 +1111,7 @@ static struct sec_cmd sec_cmds[] = {
 	{SEC_CMD("run_open_short_test_read_all", run_open_short_test_read_all),},
 	{SEC_CMD("run_noise_test_read", run_noise_test_read),},
 	{SEC_CMD("run_noise_test_read_all", run_noise_test_read_all),},
+	{SEC_CMD("run_sram_test", run_sram_test),},
 	{SEC_CMD("get_gap_data_x_all", get_gap_data_x_all),},
 	{SEC_CMD("get_gap_data_y_all", get_gap_data_y_all),},
 	{SEC_CMD("factory_cmd_result_all", factory_cmd_result_all),},
@@ -977,6 +1119,7 @@ static struct sec_cmd sec_cmds[] = {
 //	{SEC_CMD("get_crc_check", get_crc_check),},
 	{SEC_CMD("set_grip_data", set_grip_data),},
 	{SEC_CMD_H("aot_enable", aot_enable),},
+	{SEC_CMD_H("spay_enable", spay_enable),},
 	{SEC_CMD("set_sip_mode", set_sip_mode),},
 	{SEC_CMD("set_game_mode", set_game_mode),},
 	{SEC_CMD_H("ear_detect_enable", ear_detect_enable),},
@@ -984,9 +1127,10 @@ static struct sec_cmd sec_cmds[] = {
 	{SEC_CMD("run_prox_intensity_read_all", cmd_run_prox_intensity_read_all),},
 	{SEC_CMD("incell_power_control", incell_power_control),},
 	{SEC_CMD("factory_lcdoff_cmd_result_all", factory_lcdoff_cmd_result_all),},
-#if !defined(CONFIG_SEC_FACTORY)	
+#if !IS_ENABLED(CONFIG_SEC_FACTORY)
 	{SEC_CMD("dead_zone_enable", dead_zone_enable),},
 #endif
+	{SEC_CMD("glove_mode", glove_mode),},
 	{SEC_CMD("not_support_cmd", not_support_cmd),},
 };
 
@@ -1010,7 +1154,7 @@ static ssize_t sensitivity_mode_show(struct device *dev,
 
 	input_info(true, tcm_hcd->pdev->dev.parent, "%s: sensitivity mode : %s\n", __func__, buff);
 
-	return snprintf(buf, SEC_CMD_BUF_SIZE, buff);
+	return snprintf(buf, SEC_CMD_BUF_SIZE, "%s", buff);
 }
 
 static ssize_t sensitivity_mode_store(struct device *dev,
@@ -1031,11 +1175,15 @@ static ssize_t read_support_feature(struct device *dev,
 		feature |= INPUT_FEATURE_ENABLE_SETTINGS_AOT;
 	if (tcm_hcd->hw_if->bdata->prox_lp_scan_enabled)
 		feature |= INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED;
+	if (tcm_hcd->hw_if->bdata->enable_sysinput_enabled)
+		feature |= INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED;
 
-	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d%s%s\n",
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d %s %s %s\n",
 			__func__, feature,
 			feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "",
-				feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "");
+			feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "",
+			feature & INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED ? " SE" : "");
 
 	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", feature);
 }
@@ -1116,22 +1264,220 @@ static ssize_t protos_event_store(struct device *dev,
 	return count;
 }
 
+static ssize_t enabled_show(struct device *dev, struct device_attribute *attr,
+					char *buf)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: lp_state %d\n", __func__, tcm_hcd->lp_state);
+
+	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", tcm_hcd->lp_state);
+}
+
+static ssize_t enabled_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+
+	int buff[2];
+	int ret;
+	int retval = 0;
+
+	if (atomic_read(&tcm_hcd->shutdown)) {
+		input_info(true, tcm_hcd->pdev->dev.parent,"%s: shutdown & not handled\n", __func__);
+		return 0;
+	}
+
+	ret = sscanf(buf, "%d,%d", &buff[0], &buff[1]);
+	if (ret != 2) {
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"%s: failed read params [%d]\n", __func__, ret);
+		return -EINVAL;
+	}
+
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: %d %d\n", __func__, buff[0], buff[1]);
+
+	tcm_hcd->sysinput_seen = true;
+
+	/* handle same sequence : buff[0] = DISPLAY_STATE_ON, DISPLAY_STATE_DOZE, DISPLAY_STATE_DOZE_SUSPEND */
+	if (buff[0] == DISPLAY_STATE_DOZE || buff[0] == DISPLAY_STATE_DOZE_SUSPEND)
+		buff[0] = DISPLAY_STATE_ON;
+
+	if (buff[0] == DISPLAY_STATE_ON) {
+		if (buff[1] == DISPLAY_EVENT_EARLY)
+			syna_tcm_early_resume(&tcm_hcd->pdev->dev);
+		else if (buff[1] == DISPLAY_EVENT_LATE)
+			syna_tcm_resume(&tcm_hcd->pdev->dev);
+	} else if (buff[0] == DISPLAY_STATE_OFF) {
+		if (atomic_read(&tcm_hcd->firmware_flashing)) {
+			retval = wait_event_interruptible_timeout(tcm_hcd->reflash_wq,
+						!atomic_read(&tcm_hcd->firmware_flashing),
+						msecs_to_jiffies(RESPONSE_TIMEOUT_MS));
+			if (retval == 0) {
+				input_err(true, tcm_hcd->pdev->dev.parent,
+					"Timed out waiting for completion of flashing firmware\n");
+				atomic_set(&tcm_hcd->firmware_flashing, 0);
+				return -EIO;
+			} else {
+				retval = 0;
+			}
+		}
+
+		if (buff[1] == DISPLAY_EVENT_EARLY)
+			syna_tcm_early_suspend(&tcm_hcd->pdev->dev);
+		else if (buff[1] == DISPLAY_EVENT_LATE)
+			syna_tcm_suspend(&tcm_hcd->pdev->dev);
+	} else if (buff[0] == DISPLAY_STATE_LPM_OFF || buff[0] == DISPLAY_STATE_SERVICE_SHUTDOWN) {
+		if (buff[0] == DISPLAY_STATE_LPM_OFF) {
+			input_info(true, tcm_hcd->pdev->dev.parent, "%s: DISPLAY_STATE_LPM_OFF \n", __func__);
+		} else if (buff[0] == DISPLAY_STATE_SERVICE_SHUTDOWN) {
+			input_info(true, tcm_hcd->pdev->dev.parent, "%s: DISPLAY_STATE_SERVICE_SHUTDOWN", __func__);
+		}
+		atomic_set(&tcm_hcd->shutdown, 1);
+		tcm_hcd->lp_state = PWR_OFF;
+		retval = tcm_hcd->enable_irq(tcm_hcd, false, false);
+		if (retval < 0) {
+			input_err(true, tcm_hcd->pdev->dev.parent, "Failed to disable interrupt before\n");
+		}
+		syna_pinctrl_configure(tcm_hcd, false);
+		input_info(true, tcm_hcd->pdev->dev.parent, "%s: lpm, disable interrupt and work--\n", __func__);
+	}
+
+	return count;
+}
+ssize_t syna_get_lp_dump(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+
+	syna_lpwg_dump_buf_read(tcm_hcd, buf);
+
+	return strlen(buf);
+}
+
+static ssize_t scrub_pos_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct sec_cmd_data *sec = dev_get_drvdata(dev);
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+	char buff[256] = { 0 };
+
+	snprintf(buff, sizeof(buff), "%d %d %d", tcm_hcd->hw_if->bdata->scrub_id, 0, 0);
+	input_info(true, tcm_hcd->pdev->dev.parent, "%s: scrub_id: %s\n", __func__, buff);
+
+	return snprintf(buf, PAGE_SIZE, "%s", buff);
+}
+
 static DEVICE_ATTR(sensitivity_mode, 0664, sensitivity_mode_show, sensitivity_mode_store);
 static DEVICE_ATTR(support_feature, 0444, read_support_feature, NULL);
 static DEVICE_ATTR(prox_power_off, 0664, prox_power_off_show, prox_power_off_store);
 static DEVICE_ATTR(virtual_prox, 0664, protos_event_show, protos_event_store);
+static DEVICE_ATTR(enabled, 0664, enabled_show, enabled_store);
+static DEVICE_ATTR(get_lp_dump, 0444, syna_get_lp_dump, NULL);
+static DEVICE_ATTR(scrub_pos, 0444, scrub_pos_show, NULL);
 
 static struct attribute *cmd_attributes[] = {
 	&dev_attr_sensitivity_mode.attr,
 	&dev_attr_support_feature.attr,
 	&dev_attr_prox_power_off.attr,
 	&dev_attr_virtual_prox.attr,
+	&dev_attr_enabled.attr,
+	&dev_attr_get_lp_dump.attr,
+	&dev_attr_scrub_pos.attr,
 	NULL,
 };
 
 static struct attribute_group cmd_attr_group = {
 	.attrs = cmd_attributes,
 };
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+static int syna_ccic_notification(struct notifier_block *nb,
+	   unsigned long action, void *data)
+{
+
+	PD_NOTI_USB_STATUS_TYPEDEF usb_status = *(PD_NOTI_USB_STATUS_TYPEDEF *)data;
+
+	if (usb_status.dest != PDIC_NOTIFY_DEV_USB)
+		return 0;
+
+	switch (usb_status.drp) {
+	case USB_STATUS_NOTIFY_ATTACH_DFP:
+		otg_flag = 1;
+		input_info(true, private_tcm_hcd->pdev->dev.parent, "%s otg_flag %d\n", __func__, otg_flag);
+		break;
+	case USB_STATUS_NOTIFY_DETACH:
+		otg_flag = 0;
+		input_info(true, private_tcm_hcd->pdev->dev.parent, "%s otg_flag %d\n", __func__, otg_flag);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+#endif
+static int syna_vbus_notification(struct notifier_block *nb,
+		unsigned long cmd, void *data)
+{
+	vbus_status_t vbus_type = *(vbus_status_t *) data;
+	int ret = 0;
+
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+	input_info(true, private_tcm_hcd->pdev->dev.parent, "%s otg_flag=%d\n", __func__, otg_flag);
+#endif
+	input_info(true, private_tcm_hcd->pdev->dev.parent, "%s cmd=%lu, vbus_type=%d\n", __func__, cmd, vbus_type);
+
+	if (atomic_read(&private_tcm_hcd->shutdown)) {
+		input_info(true, private_tcm_hcd->pdev->dev.parent,"%s: shutdown & not handled\n", __func__);
+		return 0;
+	}
+
+	switch (vbus_type) {
+	case STATUS_VBUS_HIGH:/* vbus_type == 2 */
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+		if (!otg_flag)
+			private_tcm_hcd->USB_detect_flag = USB_PLUG_ATTACHED;
+		else
+			ret = -1;
+#else
+		private_tcm_hcd->USB_detect_flag = USB_PLUG_ATTACHED;
+#endif
+		break;
+	case STATUS_VBUS_LOW:/* vbus_type == 1 */
+		private_tcm_hcd->USB_detect_flag = USB_PLUG_DETACHED;
+		break;
+	default:
+		ret = -1;
+		break;
+	}
+
+	queue_work(private_tcm_hcd->usb_notifier_workqueue, &private_tcm_hcd->usb_notifier_work);
+
+	return 0;
+}
+static void syna_vbus_notification_work(struct work_struct *work)
+{
+	int ret = 0;
+
+	input_info(true, private_tcm_hcd->pdev->dev.parent, "%s,USB_detect_flag:%d\n", __func__, private_tcm_hcd->USB_detect_flag);
+
+	if (atomic_read(&private_tcm_hcd->shutdown)) {
+		input_info(true, private_tcm_hcd->pdev->dev.parent,"%s: shutdown & not handled\n", __func__);
+		return;
+	}
+
+	ret = private_tcm_hcd->set_dynamic_config(private_tcm_hcd, DC_CHARGER_CONNECTED, private_tcm_hcd->USB_detect_flag);
+	if (ret < 0) {
+		input_info(true, private_tcm_hcd->pdev->dev.parent, "%s: Failed to set USB_detect_flag:%d\n",
+				__func__, private_tcm_hcd->USB_detect_flag);
+		return;
+	}
+	return;
+}
+#endif
 
 int sec_fn_init(struct syna_tcm_hcd *tcm_hcd)
 {
@@ -1176,6 +1522,22 @@ int sec_fn_init(struct syna_tcm_hcd *tcm_hcd)
 		goto error_alloc_pFram;
 	}
 
+	private_tcm_hcd = tcm_hcd;
+	private_tcm_hcd->glove_enabled = UNSET_GLOVE_MODE;
+	private_tcm_hcd->USB_detect_flag = USB_PLUG_DETACHED;
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+	otg_flag = 0;
+	manager_notifier_register(&private_tcm_hcd->ccic_nb, syna_ccic_notification,
+			MANAGER_NOTIFY_PDIC_INITIAL);
+#endif
+	tcm_hcd->usb_notifier_workqueue = create_singlethread_workqueue("syna_tcm_usb_noti");
+	INIT_WORK(&tcm_hcd->usb_notifier_work, syna_vbus_notification_work);
+
+	vbus_notifier_register(&private_tcm_hcd->vbus_nb, syna_vbus_notification,
+			VBUS_NOTIFY_DEV_CHARGER);
+#endif
+
 	return 0;
 
 error_alloc_pFram:
@@ -1187,6 +1549,17 @@ exit:
 void sec_fn_remove(struct syna_tcm_hcd *tcm_hcd)
 {
 	input_info(true, tcm_hcd->pdev->dev.parent, "%s\n", __func__);
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+	manager_notifier_unregister(&private_tcm_hcd->ccic_nb);
+#endif
+	cancel_work_sync(&tcm_hcd->usb_notifier_work);
+	flush_workqueue(tcm_hcd->usb_notifier_workqueue);
+	destroy_workqueue(tcm_hcd->usb_notifier_workqueue);
+
+	vbus_notifier_unregister(&private_tcm_hcd->vbus_nb);
+#endif
 
 	kfree(tcm_hcd->pFrame);
 

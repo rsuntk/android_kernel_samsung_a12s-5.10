@@ -39,13 +39,11 @@
 #include <linux/firmware.h>
 #include "synaptics_tcm_core.h"
 
-#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
+#if IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)
 #define ENABLE_SYS_ZEROFLASH false
 #else
 #define ENABLE_SYS_ZEROFLASH true
 #endif
-
-#define FW_IMAGE_NAME "synaptics/hdl_firmware.img"
 
 #define BOOT_CONFIG_ID "BOOT_CONFIG"
 

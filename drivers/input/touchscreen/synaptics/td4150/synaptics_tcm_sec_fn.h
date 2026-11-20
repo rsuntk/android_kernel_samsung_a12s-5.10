@@ -39,7 +39,22 @@
 
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
+
+#if IS_ENABLED(CONFIG_SPU_VERIFY)
+#define SUPPORT_FW_SIGNED
+#endif
+
+#ifdef SUPPORT_FW_SIGNED
 #include <linux/spu-verify.h>
+#endif
+
+#if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
+#include <linux/notifier.h>
+#include <linux/vbus_notifier.h>
+#if IS_ENABLED(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
+#include <linux/usb/typec/manager/usb_typec_manager_notifier.h>
+#endif
+#endif
 
 #define TEST_MODE_MIN_MAX		false
 #define TEST_MODE_ALL_NODE		true
@@ -59,6 +74,11 @@ enum FW_SIGN {
 	SIGNING = 1,
 };
 
+typedef enum {
+	TEST_RESULT_PASS = 0x00,
+	TEST_RESULT_FAIL = 0x01,
+} TEST_RESULT;
+
 int run_test(struct syna_tcm_hcd *tcm_hcd, struct sec_factory_test_mode *mode, enum test_code test_code);
 int test_abs_cap(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode);
 int test_noise(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode);
@@ -66,6 +86,7 @@ int test_open_short(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode
 int raw_data_gap_x(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode);
 int raw_data_gap_y(struct sec_cmd_data *sec, struct sec_factory_test_mode *mode);
 int test_fw_crc(struct sec_cmd_data *sec);
+int test_fw_ram(struct sec_cmd_data *sec);
 int test_check_connection(struct sec_cmd_data *sec);
 int test_sensitivity(void);
 int get_proximity(void);

@@ -12,12 +12,17 @@ fwabs := $(addprefix $(srctree)/,$(filter-out /%,$(fwdir)))$(filter /%,$(fwdir))
 
 fw-external-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM) += tsp_synaptics/td4150_a12s_boe.bin tsp_synaptics/td4375_a12s_boe.bin tsp_synaptics/td4160_a12s_boe.bin
 
-fw-external-$(CONFIG_TOUCHSCREEN_ILITEK_ILI9881X) += tsp_ilitek/ili9882_a12s.hex tsp_ilitek/ili7807s_a12s.hex
-fw-external-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += tsp_novatek/nt36525_a12s_csot.bin tsp_novatek/nt36525_a12s_mp_csot.bin \
+fw-external-$(CONFIG_TOUCHSCREEN_ILITEK_ILI9881X) += tsp_ilitek/ili9881x_m12s.hex tsp_ilitek/ili7806s_m12s.hex tsp_ilitek/ili9882_a12s.hex tsp_ilitek/ili7807s_a12s.hex
+fw-external-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += tsp_novatek/nt36525_m12s_csot.bin tsp_novatek/nt36525_m12s_mp_csot.bin \
+							tsp_novatek/nt36525_m12s_dtc.bin tsp_novatek/nt36525_m12s_mp_dtc.bin \
+							tsp_novatek/nt36675_m12s_ltps.bin tsp_novatek/nt36675_m12s_mp_ltps.bin \
+							tsp_novatek/nt36525_a12s_csot.bin tsp_novatek/nt36525_a12s_mp_csot.bin \
 							tsp_novatek/nt36525_a12s_dtc.bin tsp_novatek/nt36525_a12s_mp_dtc.bin \
 							tsp_novatek/nt36525_a12s_sharp.bin tsp_novatek/nt36525_a12s_mp_sharp.bin
 
 fw-external-$(CONFIG_SENSORS_A96T3X6) += abov/a96t356_a12_main.bin abov/a96t356_a12_sub.bin
+fw-external-$(CONFIG_SENSORS_A96T3X6_M12_ALL) += abov/a96t356_m12s.bin abov/a96t356_m12s_sub.bin
+fw-external-$(CONFIG_SENSORS_A96T3X6_M12_KOR) += abov/a96t356_m12s_kor.bin abov/a96t356_m12s_kor_sub.bin
 
 quiet_cmd_fwbin = MK_FW   $@
       cmd_fwbin = FWNAME="$(patsubst firmware/%.gen.S,%,$@)";		     \
